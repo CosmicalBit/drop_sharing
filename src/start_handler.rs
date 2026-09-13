@@ -1,13 +1,19 @@
+use std::{
+    ffi::OsStr,
+    fs::{File, FileType, read_dir},
+    hint::select_unpredictable,
+    io::{self, Read},
+    os::unix::ffi::OsStrExt,
+    path::{Path, PathBuf},
+    process::Output,
+};
+
 use smallvec::SmallVec;
 
-use crate::arguments::StartArgs;
-use std::ffi::OsStr;
-use std::fs::{File, FileType};
-use std::hint::select_unpredictable;
-use std::io;
-use std::path::Path;
-use std::process::Output;
-use std::{fs::read_dir, path::PathBuf};
+use crate::{
+    arguments::StartArgs,
+    discover::{Pack, first_time_poor_discover},
+};
 
 fn hadle_start(args: StartArgs) -> io::Result<()> {
     let dir = args.directory;
@@ -18,7 +24,7 @@ fn hadle_start(args: StartArgs) -> io::Result<()> {
     Ok(())
 }
 
-fn walk<A: FileAction>(path: &Path) -> io::Result<Vec<A::Output>> {
+pub fn walk<A: FileAction>(path: &Path) -> io::Result<Vec<A::Output>> {
     let mut vec = Vec::new();
     recursive_dir::<A>(path, &mut vec)?;
 
@@ -26,7 +32,6 @@ fn walk<A: FileAction>(path: &Path) -> io::Result<Vec<A::Output>> {
 }
 
 ///walks a dir and for every item that is a file it calls a function that inplemets [`FileAction`]
-///
 fn recursive_dir<A: FileAction>(path: &Path, out: &mut Vec<A::Output>) -> io::Result<()> {
     let dir = read_dir(path)?;
 
@@ -134,5 +139,59 @@ impl FileAction for FileInfo {
         let name = path.file_name().expect("invisible file name").to_str().unwrap().to_string();
 
         Ok(FileInfo::new(name, path, size, ftype))
+    }
+}
+
+// TODO: SEND THIS BUFFERED] does it matter if i read all one time no?
+// il just reconstruct when sending it
+
+pub struct FData {
+    file_name: Box<[u8]>,
+    file_contents: Box<[u8]>,
+}
+
+//send order
+//
+// file_name size
+// 
+// file_name
+// 
+// file_conten_Size
+// file_contents
+// 
+// 1st TODO: REFACTOr NEW AND BUF READ + SEND
+impl FData {
+    pub fn new(path: &Path) -> io::Result<Self> {
+        let file_name = path
+            .file_name()
+            .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidFilename, "empty name"))?
+            .as_bytes();
+
+        let mut file = File::open(path)?;
+        let file_len = file.metadata()?.len();
+
+        //TODO: this crashes if file is too big
+        let mut file_contents = vec![0u8; file_len as usize].into_boxed_slice();
+
+        file.read_exact(&mut file_contents)?;
+
+        Ok(Self {
+            file_name: Box::from(file_name),
+
+            file_contents,
+        })
+    }
+}
+
+impl FileAction for FData {
+    type Output = Self;
+    fn action(path: &Path) -> io::Result<Self::Output> {
+        FData::new(path)
+    }
+}
+
+impl Pack for FData{
+    fn compact(&self) -> Vec<u8> {
+        let mut 
     }
 }

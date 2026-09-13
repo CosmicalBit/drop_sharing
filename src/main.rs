@@ -3,9 +3,8 @@ use clap::Parser;
 use crate::arguments::{Cli, Command::Start};
 
 mod arguments;
-mod start_handler;
 mod discover;
-
+mod start_handler;
 
 fn main() {
     let commands = Cli::parse();
@@ -15,9 +14,4 @@ fn main() {
 
         _ => unreachable!(),
     }
-
-
-    
 }
-
-
