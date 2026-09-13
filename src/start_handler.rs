@@ -9,15 +9,9 @@ use std::path::Path;
 use std::process::Output;
 use std::{fs::read_dir, path::PathBuf};
 
-
-
-
-
 fn hadle_start(args: StartArgs) -> io::Result<()> {
     let dir = args.directory;
 
-   
-    
     // send the confirmation if asked
     let file_info_list: Vec<FileInfo> = walk::<FileInfo>(&dir)?;
 
@@ -65,6 +59,7 @@ pub trait FileAction {
 }
 
 #[repr(u8)]
+#[derive(Clone)]
 enum FileKind {
     File = 1,
     Symlink = 2,
@@ -88,6 +83,7 @@ impl From<FileType> for FileKind {
 
 ///File info is used to be sent as a confirmation
 /// its merely to check if the use  wants to recieve
+// TODO: this needs to implement trait [`Packed`] to be sendable over network
 pub struct FileInfo {
     name: String,
     path: PathBuf,
@@ -103,6 +99,21 @@ impl FileInfo {
             size,
             kind,
         }
+    }
+}
+
+impl FileInfo {
+    pub fn name(&self) -> &str {
+        self.name.as_str()
+    }
+    pub fn path(&self) -> &Path {
+        &self.path
+    }
+    pub fn kind(&self) -> u8 {
+        self.kind.clone() as u8
+    }
+    pub fn size(&self) -> u64 {
+        self.size
     }
 }
 

@@ -9,6 +9,10 @@ pub enum Protocol<'device_name> {
     Ritch(DiscoveryData<'device_name, Ritch>),
 }
 
+pub trait Pack {
+    fn compact(&self) -> Vec<u8>;
+}
+
 impl Protocol<'_> {
     fn kind_byte(&self) -> u8 {
         match self {
@@ -16,20 +20,36 @@ impl Protocol<'_> {
             Self::Ritch(_) => 2,
         }
     }
+}
 
+impl Pack for Protocol<'_> {
     //compacts it , the [`APP_IDENT`] comes first
-     fn compact(&self) {
-        let vec: Vec<u8> = Vec::new();
+    fn compact(&self) -> Vec<u8> {
+        let mut vec: Vec<u8> = Vec::new();
         let byte = self.kind_byte();
 
-        todo!();
         match self {
-            
             Protocol::Poor(data) => {
                 vec.extend_from_slice(APP_IDENT);
-                vec.extend_from_slice(&byte);
+                vec.extend_from_slice(&[byte]);
+                vec.extend_from_slice(&data.device_name_len);
+                vec.extend_from_slice(data.device_name);
+                //dont send [`State`] bcs its poor meaning that it carries no extra info
                 
-                
+                vec
+            },
+
+            Protocol::Ritch(data) => {
+                //TODO: implement the rich option, needs to pack rich and for that needs to pack FileInfo and potentially change the struct
+                todo!("implement the rich option ");
+                vec.extend_from_slice(APP_IDENT);
+                vec.extend_from_slice(&[byte]);
+                vec.extend_from_slice(&data.device_name_len);
+                vec.extend_from_slice(data.device_name);
+                vec.extend_from_slice(&data.state.data_size);
+                vec.extend_from_slice(&data.state.data.as_slice());
+
+                vec
             },
         }
     }
@@ -37,16 +57,15 @@ impl Protocol<'_> {
 
 struct Poor;
 struct Ritch {
-    data_size: u32,
+    data_size: [u8; 4], //u32
     data: Vec<FileInfo>,
 }
 struct DiscoveryData<'device_name, State> {
-    app_ident: &'static [u8],
-    device_name_len: [u8; 2],
-    device_name: &'device_name [u8],
-    state: State,
+    pub app_ident: &'static [u8],
+    pub device_name_len: [u8; 2],
+    pub device_name: &'device_name [u8],
+    pub state: State,
 }
-
 impl<'a> DiscoveryData<'a, Poor> {
     fn new(device_name: &'a OsStr) -> Self {
         let len = device_name.len() as u16;
@@ -61,6 +80,8 @@ impl<'a> DiscoveryData<'a, Poor> {
     }
 }
 
+const DISCOVERY_PORT: u16 = 4242;
+
 async fn first_time_poor_discover() -> io::Result<()> {
     let socket = UdpSocket::bind("0.0.0.0:0").await?;
 
@@ -69,8 +90,10 @@ async fn first_time_poor_discover() -> io::Result<()> {
     //first ask if user wants with poor packet, no [`FileInfo`]
     let host = hostname::get()?;
     let discovery_data = Protocol::Poor(DiscoveryData::new(&host));
+    let compacted = discovery_data.compact();
+    
+    socket.send_to(&compacted, ("255.255.255.255:",DISCOVERY_PORT)).await?;
 
-    socket.send_to(buf, addr);
-
+    
     Ok(())
 }
