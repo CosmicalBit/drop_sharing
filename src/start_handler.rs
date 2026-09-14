@@ -142,9 +142,50 @@ impl FileAction for FileInfo {
     }
 }
 
-// TODO: SEND THIS BUFFERED] does it matter if i read all one time no?
-// il just reconstruct when sending it
+// TODO: SEND THIS BUFFERED
+/*
+c = chunk size in bytes
+S = total file size in bytes
+n = nummbere of chunks
 
+n = S / c
+
+v_net   = recent effective network throughput (bytes/s)
+v_enc   = encryption throughput (bytes/s)
+v_recon = reconstruction/write throughput (bytes/s)
+
+t_hash      = fixed hashing overhead per chunk (seconds)
+t_enc_chunk = fixed encryption overhead per chunk (seconds)
+t_meta      = fixed metadata overhead per chunk (seconds)
+t_protocol  = fixed protocol overhead per chunk (seconds)
+
+D(c) = expected number of bytes that actually need to be transferred
+       when using chunk size c
+
+
+Estimated total cost:
+
+T(c) =
+    D(c) / v_net
+  + D(c) / v_enc
+  + D(c) / v_recon
+  + (S / c) * (
+        t_hash
+      + t_enc_chunk
+      + t_meta
+      + t_protocol
+    )
+
+
+Goal:
+
+Find c* such that:
+
+c* = argmin T(c)
+
+subject to:
+
+c_min <= c <= c_max */
 pub struct FData {
     file_name: Box<[u8]>,
     file_contents: Box<[u8]>,
@@ -195,3 +236,4 @@ impl Pack for FData{
         let mut 
     }
 }
+
