@@ -3,8 +3,8 @@ use clap::Parser;
 use crate::arguments::{Cli, Command::Start};
 
 mod arguments;
-mod discover;
-mod start_handler;
+mod discovery;
+
 
 fn main() {
     let commands = Cli::parse();
