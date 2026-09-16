@@ -2,13 +2,19 @@ use std::{
     io::{self, Error},
     net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr, SocketAddrV4, SocketAddrV6},
 };
+
 use hostname::get;
-use crate::discovery::lib::{
-    Connection, Deserialize,
-    IndicationBytes::{self, MagicInit},
-    Serialize, Udp,
+
+use crate::discovery::{
+    hostinfo::HostInfo,
+    lib::{
+        Connection, Deserialize,
+        IndicationBytes::{self, MagicInit},
+        Serialize, Udp,
+    },
 };
 
+#[derive(PartialEq, Eq, Debug, Clone)]
 pub enum Message {
     Address(SocketAddr),
     HostName(HostInfo),
@@ -40,14 +46,14 @@ impl Serialize for Message {
                         return out;
                     },
                 }
-                todo!()
             },
+            _ => todo!(),
         }
     }
 }
 
 impl Message {
-    pub fn deserialize_socket_addr( connection: &Connection<Udp>) -> Option<SocketAddr> {
+    pub fn deserialize_socket_addr(connection: &Connection<Udp>) -> Option<SocketAddr> {
         let mut addr = [0u8; 20];
         connection.read_exact(&mut addr);
 
@@ -82,5 +88,34 @@ impl Deserialize for SocketAddr {
             },
             _ => return None,
         }
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+
+    fn msg_sckaddr() -> (Message, Message) {
+        let ipv4: SocketAddr = "127.0.0.1:4242".parse().unwrap();
+        let ipv6: SocketAddr = "[::1]:4242".parse().unwrap();
+
+        (Message::Address(ipv4), Message::Address(ipv6))
+    }
+
+    #[test]
+    fn check_deserialized_serialize_round_trip() {
+        let (org_ipv4, ipv6) = msg_sckaddr();
+
+        let serialized = org_ipv4.clone().serialize();
+
+        let deserialized = SocketAddr::deserialize(&serialized).unwrap();
+
+        assert_eq!(Message::Address(deserialized), org_ipv4);
+
+        let serialized = ipv6.clone().serialize();
+
+        let deserialized = SocketAddr::deserialize(&serialized).unwrap();
+
+        assert_eq!(Message::Address(deserialized), ipv6);
     }
 }

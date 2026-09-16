@@ -1,3 +1,4 @@
+#[derive(PartialEq, Eq,Debug,Clone)]
 pub struct HostInfo {
     name: String,
     num_of_files: u32,
