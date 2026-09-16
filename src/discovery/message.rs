@@ -1,15 +1,11 @@
-use std::{
-    io::{self, Error},
-    net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr, SocketAddrV4, SocketAddrV6},
-};
-
-use hostname::get;
+use std::net::{Ipv4Addr, Ipv6Addr, SocketAddr, SocketAddrV4, SocketAddrV6};
+use std::io;
 
 use crate::discovery::{
     hostinfo::HostInfo,
     lib::{
         Connection, Deserialize,
-        IndicationBytes::{self, MagicInit},
+        IndicationBytes::{self},
         Serialize, Udp,
     },
 };
@@ -34,7 +30,7 @@ impl Serialize for Message {
                         out.extend_from_slice(&addr.port().to_be_bytes());
                         out.extend_from_slice(&[0u8; 12]);
 
-                        return out;
+                        out
                     },
                     SocketAddr::V6(addr) => {
                         let mut out = Vec::with_capacity(20);
@@ -43,7 +39,7 @@ impl Serialize for Message {
                         out.push(6); // ipv6
                         out.extend_from_slice(&addr.ip().octets());
                         out.extend_from_slice(&addr.port().to_be_bytes());
-                        return out;
+                        out
                     },
                 }
             },
@@ -53,11 +49,11 @@ impl Serialize for Message {
 }
 
 impl Message {
-    pub fn deserialize_socket_addr(connection: &Connection<Udp>) -> Option<SocketAddr> {
+    pub async fn deserialize_socket_addr(connection: &Connection<Udp>) -> io::Result<Option<SocketAddr>> {
         let mut addr = [0u8; 20];
-        connection.read_exact(&mut addr);
+        connection.read_exact(&mut addr).await?;
 
-        SocketAddr::deserialize(&addr)
+        Ok(SocketAddr::deserialize(&addr))
     }
 }
 impl Deserialize for SocketAddr {
@@ -86,7 +82,7 @@ impl Deserialize for SocketAddr {
 
                 Some(SocketAddr::V6(SocketAddrV6::new(ip, port, 0, 0)))
             },
-            _ => return None,
+            _ => None,
         }
     }
 }

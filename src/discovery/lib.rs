@@ -1,12 +1,10 @@
 use std::{
-    io::{self, Error},
-    net::{IpAddr, Ipv4Addr, SocketAddr, SocketAddrV4},
-    sync::Arc,
+    io::{self},
+    net::SocketAddr,
 };
 
-use hostname::get;
 use tokio::{
-    io::{AsyncReadExt, AsyncWriteExt},
+    io::AsyncWriteExt,
     net::{TcpListener, TcpStream, UdpSocket},
 };
 
@@ -67,7 +65,7 @@ impl Connection<Tcp> {
         Ok(Self { mode: Tcp::new(socket) })
     }
     pub async fn send(&mut self, bytes: &[u8]) -> io::Result<()> {
-        self.mode.stream.write_all(&bytes).await?;
+        self.mode.stream.write_all(bytes).await?;
 
         Ok(())
     }
@@ -92,7 +90,7 @@ impl Connection<Udp> {
 
         broadcast.mode.stream.writable().await;
 
-        broadcast.mode.stream.send_to(&data, "255.255.255.255:4242").await?;
+        broadcast.mode.stream.send_to(data, "255.255.255.255:4242").await?;
 
         Ok(())
     }

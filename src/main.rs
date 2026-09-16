@@ -10,7 +10,7 @@ fn main() {
     let commands = Cli::parse();
 
     match commands.command {
-        Start(start_args) => todo!(),
+        Start(_start_args) => todo!(),
 
         _ => unreachable!(),
     }
