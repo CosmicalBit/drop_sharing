@@ -16,7 +16,10 @@ pub async fn sender_init(num_of_files: u32) -> io::Result<()> {
 
     let mut tcp_connection = Connection::<Tcp>::new(my_socket_addr).await?;
 
+    //send host 
     host.send(&mut tcp_connection).await?;
+
+    //TODO read reciever confirmation here
     
     Ok(())
 }

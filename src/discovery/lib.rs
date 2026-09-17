@@ -11,7 +11,9 @@ use tokio::{
 #[repr(u8)]
 pub enum IndicationBytes {
     MagicInit = 0x1,
-    HostName = 0x2,
+    HostInfo = 0x2,
+    HostName = 0x4,
+    TransferResponse = 0x3,
 }
 
 impl From<u8> for IndicationBytes {
@@ -70,8 +72,11 @@ impl Connection<Tcp> {
 
         Ok(Self { mode: Tcp::new(stream) })
     }
-    pub async fn send(&mut self, bytes: &[u8]) -> io::Result<()> {
-        self.mode.stream.write_all(bytes).await?;
+}
+
+impl Send for Connection<Tcp> {
+    async fn send(&mut self, buffer: &[u8]) -> io::Result<()> {
+        self.mode.stream.write_all(buffer).await?;
 
         Ok(())
     }
@@ -125,7 +130,6 @@ pub trait Serialize {
     fn serialize(self) -> Vec<u8>;
 }
 
-
 pub enum Size {
     Fixed(usize),
     Dynamic {
@@ -141,4 +145,7 @@ pub trait Deserialize: Sized {
 
 pub trait Recieve {
     async fn recieve(&mut self, buffer: &mut [u8]) -> io::Result<()>;
+}
+pub trait Send {
+    async fn send(&mut self, buffer: &[u8]) -> io::Result<()>;
 }

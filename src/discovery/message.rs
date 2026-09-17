@@ -4,18 +4,56 @@ use std::{
 };
 
 use crate::discovery::{
-    hostinfo::HostInfo,
+    hostinfo::{Host, HostInfo},
     lib::{
         Connection, Deserialize,
         IndicationBytes::{self},
-        Recieve, Serialize, Size, Tcp,
+        Recieve, Send, Serialize, Size, Tcp,
     },
 };
 
-#[derive(PartialEq, Eq, Debug, Clone)]
+#[derive(PartialEq, Eq, Clone, Debug)]
 pub enum Message {
     Address(SocketAddr),
     HostName(HostInfo),
+    TransferResponse(TransferResponse),
+}
+
+#[repr(u8)]
+#[derive(PartialEq, Eq, Clone, Debug)]
+pub enum TransferDesision {
+    Accepted = 1,
+    Rejected = 0,
+}
+impl Serialize for TransferDesision {
+    fn serialize(self) -> Vec<u8> {
+        vec![self as u8]
+    }
+}
+
+#[derive(PartialEq, Eq, Clone, Debug)]
+pub struct TransferResponse {
+    host: Host,
+    decision: TransferDesision,
+}
+
+impl TransferResponse {
+    pub fn new(decision: TransferDesision) -> io::Result<Self> {
+        let host = Host::new()?;
+
+        Ok(Self { host, decision })
+    }
+}
+
+impl Serialize for TransferResponse {
+    fn serialize(self) -> Vec<u8> {
+        let mut vec = Vec::new();
+
+        vec.push(IndicationBytes::TransferResponse as u8);
+        vec.extend_from_slice(&self.host.serialize());
+        vec.extend_from_slice(&self.decision.serialize());
+        vec
+    }
 }
 
 impl Message {
@@ -23,6 +61,7 @@ impl Message {
         match self {
             Message::Address(addr) => connection.send(&addr.serialize()).await,
             Message::HostName(name) => connection.send(&name.serialize()).await,
+            Message::TransferResponse(response) => connection.send(&response.serialize()).await,
         }
     }
     pub async fn receive<T: Deserialize>(connection: &mut impl Recieve) -> io::Result<Option<T>> {
@@ -83,6 +122,7 @@ impl Serialize for Message {
         match self {
             Self::Address(addr) => addr.serialize(),
             Self::HostName(host) => host.serialize(),
+            Self::TransferResponse(response) => response.serialize(),
         }
     }
 }
