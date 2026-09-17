@@ -10,7 +10,8 @@ pub struct Cli {
 
 #[derive(Subcommand, Debug, Clone)]
 pub enum Command {
-    Start(StartArgs),
+    StartSender(StartArgs),
+    StartReciever,
 }
 
 #[derive(Parser, Debug, Clone)]

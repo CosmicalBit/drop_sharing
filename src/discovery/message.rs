@@ -8,7 +8,7 @@ use crate::discovery::{
     lib::{
         Connection, Deserialize,
         IndicationBytes::{self},
-        Recieve, Serialize, Size, Tcp, Udp,
+        Recieve, Serialize, Size, Tcp,
     },
 };
 
@@ -87,14 +87,6 @@ impl Serialize for Message {
     }
 }
 
-impl Message {
-    pub async fn deserialize_socket_addr(connection: &mut Connection<Udp>) -> io::Result<Option<SocketAddr>> {
-        let mut addr = [0u8; 20];
-        connection.recieve(&mut addr).await?;
-
-        Ok(SocketAddr::deserialize(&addr))
-    }
-}
 impl Deserialize for SocketAddr {
     const SIZE: Size = Size::Fixed(20);
 

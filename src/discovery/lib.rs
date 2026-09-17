@@ -97,14 +97,14 @@ impl Connection<Udp> {
     async fn new_broadcast() -> io::Result<Self> {
         let udp = UdpSocket::bind("0.0.0.0:0").await?;
 
-        udp.set_broadcast(true);
+        udp.set_broadcast(true)?;
 
         Ok(Self { mode: Udp::new(udp) })
     }
     pub async fn start_broadcast_and_send(data: &[u8]) -> io::Result<()> {
         let broadcast = Connection::<Udp>::new_broadcast().await?;
 
-        broadcast.mode.stream.writable().await;
+        broadcast.mode.stream.writable().await?;
 
         broadcast.mode.stream.send_to(data, "255.255.255.255:4242").await?;
 
@@ -116,7 +116,7 @@ impl Recieve for Connection<Udp> {
     async fn recieve(&mut self, buffer: &mut [u8]) -> io::Result<()> {
         self.mode.stream.readable().await?;
 
-        self.mode.stream.recv_from(buffer);
+        self.mode.stream.recv_from(buffer).await?;
 
         Ok(())
     }
@@ -125,7 +125,7 @@ pub trait Serialize {
     fn serialize(self) -> Vec<u8>;
 }
 
-#[derive(PartialEq, Eq)]
+
 pub enum Size {
     Fixed(usize),
     Dynamic {

@@ -1,10 +1,10 @@
 use crate::discovery::hostinfo::HostInfo;
 use tokio::io;
 
-use crate::discovery::message::Message::{self, HostName};
+use crate::discovery::message::Message::{self};
 use crate::discovery::lib::{Connection,Udp, Serialize, Tcp};
 
-async fn sender_init(num_of_files: u32) -> io::Result<()> {
+pub async fn sender_init(num_of_files: u32) -> io::Result<()> {
     let (_tcp_connection, my_socket_addr) = Connection::<Tcp>::new_listen().await?;
 
     let msg = Message::Address(my_socket_addr).serialize();
