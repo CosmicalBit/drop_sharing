@@ -2,7 +2,7 @@ use std::{io::Error, process::Output};
 
 use tokio::io;
 
-use crate::discovery::lib::{Deserialize, IndicationBytes, Serialize};
+use crate::discovery::lib::{Deserialize, IndicationBytes, Serialize, Size};
 
 #[derive(PartialEq, Eq, Debug, Clone)]
 pub struct HostInfo {
@@ -45,6 +45,16 @@ impl Serialize for HostInfo {
 }
 
 impl Deserialize for HostInfo {
+    const SIZE: Size = Size::Dynamic {
+        header_size: 5,
+        total_size: |header| {
+            let name_len = u32::from_be_bytes(header[1..5].try_into().ok()?) as usize;
+
+            //header + name + num_of_Files
+            Some(5 + name_len + 4)
+        },
+    };
+
     fn deserialize(data: &[u8]) -> Option<Self>
     where
         Self: Sized,
@@ -70,7 +80,6 @@ mod test {
         let host_info = HostInfo::new(4).unwrap();
 
         let serilized = host_info.clone().serialize();
-
 
         let deserialized = HostInfo::deserialize(&serilized).unwrap();
 

@@ -4,7 +4,7 @@ use std::{
 };
 
 use tokio::{
-    io::AsyncWriteExt,
+    io::{AsyncReadExt, AsyncWriteExt},
     net::{TcpListener, TcpStream, UdpSocket},
 };
 
@@ -57,15 +57,31 @@ impl Connection<Tcp> {
 
         Ok((connection, my_addr))
     }
-    //it takes old connection just to make sure i dont accidentaly use it 
-    pub async fn new_send_n_listen(addr: SocketAddr,_old_connection: Connection<Udp>) -> io::Result<Self> {
+    //it takes old connection just to make sure i dont accidentaly use it
+    pub async fn new_send_n_listen(addr: SocketAddr, _old_connection: Connection<Udp>) -> io::Result<Self> {
         let socket = TcpStream::connect(addr).await?;
-
 
         Ok(Self { mode: Tcp::new(socket) })
     }
+    pub async fn new(addr: SocketAddr) -> io::Result<Self> {
+        let socket = TcpListener::bind(addr).await?;
+
+        let (stream, _sender) = socket.accept().await?;
+
+        Ok(Self { mode: Tcp::new(stream) })
+    }
     pub async fn send(&mut self, bytes: &[u8]) -> io::Result<()> {
         self.mode.stream.write_all(bytes).await?;
+
+        Ok(())
+    }
+}
+
+impl Recieve for Connection<Tcp> {
+    async fn recieve(&mut self, buffer: &mut [u8]) -> io::Result<()> {
+        self.mode.stream.readable().await?;
+
+        self.mode.stream.read_exact(buffer).await?;
 
         Ok(())
     }
@@ -94,7 +110,10 @@ impl Connection<Udp> {
 
         Ok(())
     }
-    pub async fn read_exact(&self, buffer: &mut [u8]) -> io::Result<()> {
+}
+
+impl Recieve for Connection<Udp> {
+    async fn recieve(&mut self, buffer: &mut [u8]) -> io::Result<()> {
         self.mode.stream.readable().await?;
 
         self.mode.stream.recv_from(buffer);
@@ -102,12 +121,24 @@ impl Connection<Udp> {
         Ok(())
     }
 }
-
 pub trait Serialize {
     fn serialize(self) -> Vec<u8>;
 }
-pub trait Deserialize {
-    fn deserialize(data: &[u8]) -> Option<Self>
-    where
-        Self: Sized;
+
+#[derive(PartialEq, Eq)]
+pub enum Size {
+    Fixed(usize),
+    Dynamic {
+        header_size: usize,
+        total_size: fn(&[u8]) -> Option<usize>,
+    },
+}
+pub trait Deserialize: Sized {
+    const SIZE: Size;
+
+    fn deserialize(data: &[u8]) -> Option<Self>;
+}
+
+pub trait Recieve {
+    async fn recieve(&mut self, buffer: &mut [u8]) -> io::Result<()>;
 }

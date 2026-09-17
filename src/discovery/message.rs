@@ -1,12 +1,14 @@
-use std::net::{Ipv4Addr, Ipv6Addr, SocketAddr, SocketAddrV4, SocketAddrV6};
-use std::io;
+use std::{
+    io,
+    net::{Ipv4Addr, Ipv6Addr, SocketAddr, SocketAddrV4, SocketAddrV6},
+};
 
 use crate::discovery::{
     hostinfo::HostInfo,
     lib::{
         Connection, Deserialize,
         IndicationBytes::{self},
-        Serialize, Udp,
+        Recieve, Serialize, Size, Tcp, Udp,
     },
 };
 
@@ -16,47 +18,86 @@ pub enum Message {
     HostName(HostInfo),
 }
 
+impl Message {
+    pub async fn send(self, connection: &mut Connection<Tcp>) -> io::Result<()> {
+        match self {
+            Message::Address(addr) => connection.send(&addr.serialize()).await,
+            Message::HostName(name) => connection.send(&name.serialize()).await,
+        }
+    }
+    pub async fn receive<T: Deserialize>(connection: &mut impl Recieve) -> io::Result<Option<T>> {
+        let data = match T::SIZE {
+            Size::Fixed(size) => {
+                let mut data = vec![0; size];
+                connection.recieve(&mut data).await?;
+                data
+            },
+
+            Size::Dynamic { header_size, total_size } => {
+                let mut data = vec![0; header_size];
+                connection.recieve(&mut data).await?;
+
+                let Some(total) = total_size(&data) else {
+                    return Ok(None);
+                };
+
+                data.resize(total, 0);
+                connection.recieve(&mut data[header_size..]).await?;
+
+                data
+            },
+        };
+
+        Ok(T::deserialize(&data))
+    }
+}
+
+impl Serialize for SocketAddr {
+    fn serialize(self) -> Vec<u8> {
+        match self {
+            SocketAddr::V4(addr) => {
+                let mut out = Vec::with_capacity(20);
+
+                out.push(IndicationBytes::MagicInit as u8);
+                out.push(4); // ipv4
+                out.extend_from_slice(&addr.ip().octets());
+                out.extend_from_slice(&addr.port().to_be_bytes());
+                out.extend_from_slice(&[0u8; 12]);
+
+                out
+            },
+            SocketAddr::V6(addr) => {
+                let mut out = Vec::with_capacity(20);
+
+                out.push(IndicationBytes::MagicInit as u8);
+                out.push(6); // ipv6
+                out.extend_from_slice(&addr.ip().octets());
+                out.extend_from_slice(&addr.port().to_be_bytes());
+                out
+            },
+        }
+    }
+}
 impl Serialize for Message {
     fn serialize(self) -> Vec<u8> {
         match self {
-            Self::Address(addr) => {
-                match addr {
-                    SocketAddr::V4(addr) => {
-                        let mut out = Vec::with_capacity(20);
-
-                        out.push(IndicationBytes::MagicInit as u8);
-                        out.push(4); // ipv4
-                        out.extend_from_slice(&addr.ip().octets());
-                        out.extend_from_slice(&addr.port().to_be_bytes());
-                        out.extend_from_slice(&[0u8; 12]);
-
-                        out
-                    },
-                    SocketAddr::V6(addr) => {
-                        let mut out = Vec::with_capacity(20);
-
-                        out.push(IndicationBytes::MagicInit as u8);
-                        out.push(6); // ipv6
-                        out.extend_from_slice(&addr.ip().octets());
-                        out.extend_from_slice(&addr.port().to_be_bytes());
-                        out
-                    },
-                }
-            },
-            _ => todo!(),
+            Self::Address(addr) => addr.serialize(),
+            Self::HostName(host) => host.serialize(),
         }
     }
 }
 
 impl Message {
-    pub async fn deserialize_socket_addr(connection: &Connection<Udp>) -> io::Result<Option<SocketAddr>> {
+    pub async fn deserialize_socket_addr(connection: &mut Connection<Udp>) -> io::Result<Option<SocketAddr>> {
         let mut addr = [0u8; 20];
-        connection.read_exact(&mut addr).await?;
+        connection.recieve(&mut addr).await?;
 
         Ok(SocketAddr::deserialize(&addr))
     }
 }
 impl Deserialize for SocketAddr {
+    const SIZE: Size = Size::Fixed(20);
+
     fn deserialize(data: &[u8]) -> Option<Self> {
         if data.len() != 20 {
             dbg!("deserialize socket addr is in wrong place");
