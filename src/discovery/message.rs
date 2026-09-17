@@ -6,9 +6,9 @@ use std::{
 use crate::discovery::{
     hostinfo::{Host, HostInfo},
     lib::{
-        Connection, Deserialize,
+        Deserialize,
         IndicationBytes::{self},
-        Recieve, Send, Serialize, Size, Tcp,
+        Recieve, Send, Serialize, Size,
     },
 };
 
@@ -57,7 +57,7 @@ impl Serialize for TransferResponse {
 }
 
 impl Message {
-    pub async fn send(self, connection: &mut Connection<Tcp>) -> io::Result<()> {
+    pub async fn send(self, connection: &mut impl Send) -> io::Result<()> {
         match self {
             Message::Address(addr) => connection.send(&addr.serialize()).await,
             Message::HostName(name) => connection.send(&name.serialize()).await,

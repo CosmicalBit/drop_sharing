@@ -18,9 +18,6 @@ impl Host {
 
         Ok(Self { name })
     }
-    fn as_bytes(&self) -> &[u8] {
-        self.name.as_bytes()
-    }
 }
 impl Serialize for Host {
     fn serialize(self) -> Vec<u8> {
@@ -59,9 +56,9 @@ impl TryFrom<&[u8]> for Host {
     type Error = std::str::Utf8Error;
 
     fn try_from(value: &[u8]) -> Result<Self, Self::Error> {
-        let name = String::from_utf8_lossy(value).to_string();
+        let name = std::str::from_utf8(value).to_owned()?;
 
-        Ok(Self { name })
+        Ok(Self { name: name.to_string() })
     }
 }
 
