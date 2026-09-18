@@ -18,6 +18,10 @@ impl Host {
 
         Ok(Self { name })
     }
+    #[cfg(test)]
+    pub fn manual(name: &str) -> Self {
+        Self { name: name.to_string() }
+    }
 }
 impl Serialize for Host {
     fn serialize(self) -> Vec<u8> {

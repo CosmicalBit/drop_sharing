@@ -3,6 +3,8 @@ use std::{
     net::{Ipv4Addr, Ipv6Addr, SocketAddr, SocketAddrV4, SocketAddrV6},
 };
 
+use strum::{EnumIter, IntoEnumIterator};
+
 use crate::discovery::{
     hostinfo::{Host, HostInfo},
     lib::{
@@ -20,7 +22,7 @@ pub enum Message {
 }
 
 #[repr(u8)]
-#[derive(PartialEq, Eq, Clone, Debug)]
+#[derive(PartialEq, Eq, Clone, Debug, EnumIter)]
 pub enum TransferDesision {
     Accepted = 1,
     Rejected = 0,
@@ -53,6 +55,48 @@ impl Serialize for TransferResponse {
         vec.extend_from_slice(&self.host.serialize());
         vec.extend_from_slice(&self.decision.serialize());
         vec
+    }
+}
+impl Deserialize for TransferDesision {
+    const SIZE: Size = Size::Fixed(1);
+
+    fn deserialize(data: &[u8]) -> Option<Self> {
+        const ACCEPT: u8 = TransferDesision::Accepted as u8;
+        const REJECT: u8 = TransferDesision::Rejected as u8;
+
+        match *data.first()? {
+            ACCEPT => Some(TransferDesision::Accepted),
+            REJECT => Some(TransferDesision::Rejected),
+            _ => None,
+        }
+    }
+}
+
+impl Deserialize for TransferResponse {
+    const SIZE: Size = Size::Dynamic {
+        header_size: 6,
+        total_size: |header| {
+            if header.first().copied()? != IndicationBytes::TransferResponse as u8
+                || header.get(1).copied()? != IndicationBytes::HostName as u8
+            {
+                return None;
+            }
+
+            let host_len = u32::from_be_bytes(header.get(2..6)?.try_into().ok()?) as usize;
+            Some(7 + host_len)
+        },
+    };
+
+    fn deserialize(data: &[u8]) -> Option<Self> {
+        if data.first().copied()? != IndicationBytes::TransferResponse as u8 {
+            return None;
+        }
+        let host_len = u32::from_be_bytes(data.get(2..6)?.try_into().ok()?) as usize;
+        let host_end = 6 + host_len;
+        let host = Host::deserialize(data.get(1..host_end)?)?;
+        let decision = TransferDesision::deserialize(data.get(host_end..host_end + 1)?)?;
+
+        Some(Self { host, decision })
     }
 }
 
@@ -186,5 +230,17 @@ mod test {
         let deserialized = SocketAddr::deserialize(&serialized).unwrap();
 
         assert_eq!(Message::Address(deserialized), ipv6);
+    }
+    #[test]
+    fn round_trip_of_transfer_responce() {
+        for decision in TransferDesision::iter() {
+            let responce = TransferResponse::new(decision).unwrap();
+
+            let seri = responce.clone().serialize();
+
+            let deri = TransferResponse::deserialize(&seri).unwrap();
+
+            assert_eq!(deri, responce);
+        }
     }
 }

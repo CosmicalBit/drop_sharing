@@ -1,4 +1,5 @@
 use crate::discovery::hostinfo::HostInfo;
+use crate::discovery::message::TransferResponse;
 use tokio::io;
 
 use crate::discovery::message::Message::{self};
@@ -20,6 +21,7 @@ pub async fn sender_init(num_of_files: u32) -> io::Result<()> {
     host.send(&mut tcp_connection).await?;
 
     //TODO read reciever confirmation here
+    Message::receive::<TransferResponse>(&mut tcp_connection).await?;
     
     Ok(())
 }

@@ -3,7 +3,14 @@ name = "drop-sharing"
 version = "0.1.0"
 edition = "2024"
 
+
 [dependencies]
 clap = { version = "4.6.6", features = ["derive"] }
 hostname = "0.4.2"
+proptest = "1.11.0"
+strum = { version = "0.28.0", features = ["derive"] }
 tokio = { version = "1.53.1", features = ["full"] }
+
+
+[dev-dependencies]
+proptest = "1.11.0"
