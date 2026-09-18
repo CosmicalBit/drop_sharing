@@ -38,6 +38,15 @@ pub struct TransferResponse {
     host: Host,
     decision: TransferDesision,
 }
+impl TransferResponse {
+    pub fn confirm(&self) -> io::Result<()> {
+        // TODO: maybe ask the user for confirmatio
+        match self.decision {
+            TransferDesision::Accepted => Ok(()),
+            TransferDesision::Rejected => Err(io::Error::new(io::ErrorKind::InvalidData, "transfer rejectedd")),
+        }
+    }
+}
 
 impl TransferResponse {
     pub fn new(decision: TransferDesision) -> io::Result<Self> {

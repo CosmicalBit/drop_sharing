@@ -20,8 +20,10 @@ pub async fn sender_init(num_of_files: u32) -> io::Result<()> {
     //send host 
     host.send(&mut tcp_connection).await?;
 
-    //TODO read reciever confirmation here
-    Message::receive::<TransferResponse>(&mut tcp_connection).await?;
+    //read reciever confirmation 
+    let confirmation = Message::receive::<TransferResponse>(&mut tcp_connection).await?.ok_or_else(||io::Error::new(io::ErrorKind::InvalidData, "error parsing confirmation"))?;
+    confirmation.confirm()?;
     
+    //start key agrrement 
     Ok(())
 }
