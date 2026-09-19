@@ -11,7 +11,7 @@ pub struct Cli {
 #[derive(Subcommand)]
 pub enum Command {
     StartSender(StartArgs),
-    StartReciever,
+    StartReceiver,
 }
 
 #[derive(Parser)]

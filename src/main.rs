@@ -4,14 +4,15 @@ use tokio::io;
 use crate::{
     arguments::{
         Cli,
-        Command::{StartReciever, StartSender},
+        Command::{StartReceiver, StartSender},
     },
-    discovery::{receiver::init::init_reciever, sender::init::sender_init},
+    discovery::{receiver::init::init_receiver, sender::init::sender_init},
     file_collection::tree_walking::{FileCount, walk},
 };
 
 mod arguments;
 mod discovery;
+mod encryption;
 mod file_collection;
 
 #[tokio::main]
@@ -26,8 +27,8 @@ async fn main() -> io::Result<()> {
 
             sender_init(counter.count() as u32).await?;
         },
-        StartReciever => {
-            init_reciever().await?;
+        StartReceiver => {
+            init_receiver().await?;
         },
     }
 

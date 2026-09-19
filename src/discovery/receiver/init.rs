@@ -11,7 +11,7 @@ use crate::discovery::{
     message::{Message, TransferDesision, TransferResponse},
 };
 
-pub async fn init_reciever() -> io::Result<()> {
+pub async fn init_receiver() -> io::Result<()> {
     let mut udp = Connection::<Udp>::new_listen().await?;
 
     let socket_addr = loop {
