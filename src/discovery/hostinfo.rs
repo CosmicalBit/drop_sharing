@@ -1,13 +1,18 @@
+//! this file implemts the necessary abstraction to 
+//! extract Host related information sutch as [`Host`] and [`HostInfo`]
+
 use std::io::Error;
 
 use tokio::io;
 
 use crate::discovery::connection::{Deserialize, IndicationBytes, Serialize, Size};
 
+/// [`Host`] contains the computer host name
 #[derive(PartialEq, Eq, Debug, Clone)]
 pub struct Host {
     name: String,
 }
+
 impl Host {
     pub(crate) fn new() -> io::Result<Self> {
         let hostname = hostname::get()?;
@@ -23,6 +28,7 @@ impl Host {
         Self { name: name.to_string() }
     }
 }
+
 impl Serialize for Host {
     fn serialize(&self) -> Vec<u8> {
         let bytes = self.name.as_bytes();
@@ -35,6 +41,8 @@ impl Serialize for Host {
         vec
     }
 }
+
+//when host is decerialized we start by writting the [`IndicationBytes`] followed by the len witch is always a `u32`
 impl Deserialize for Host {
     const SIZE: Size = Size::Dynamic {
         header_size: 5,
@@ -67,6 +75,7 @@ impl TryFrom<&[u8]> for Host {
     }
 }
 
+///[`HostInfo`] stores a [`Host`] plus the ammount of files that will be sent over `Tcp` later on
 #[derive(PartialEq, Eq, Debug, Clone)]
 pub struct HostInfo {
     host: Host,

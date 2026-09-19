@@ -1,3 +1,7 @@
+//! Encryption key generation and  exchane operations
+//! 
+//! this module provides the main helpers and abstracions for ecription key creation Deserialization and Serialization
+//! the main structs are [`Secret`] and [`KeyPair`]
 use ml_kem::{
     Decapsulate, Encapsulate, Kem, KeyExport, MlKem1024, TryKeyInit,
     kem::SharedKey,
@@ -11,6 +15,7 @@ use crate::discovery::connection::{
     Serialize, Size,
 };
 
+///[`Secret`] contains the private encrytion key and the recieved / sent cyphertext
 #[derive(PartialEq, Eq)]
 pub struct Secret {
     secret: Zeroizing<SharedKey<MlKem1024>>,
@@ -85,6 +90,8 @@ impl From<EncapsulationKey> for Secret {
     }
 }
 
+///[`KeyPair`] contains the encapsolation and decapsulation keys which are essensial
+/// for the ecrytion protocol and to obtain [`Secret`]
 pub struct KeyPair {
     private_key: DecapsulationKey,
     public_key: EncapsulationKey,

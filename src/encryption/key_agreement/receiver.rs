@@ -1,3 +1,4 @@
+//! defines the main fucntion for encrytion key exchange on the reciever side
 use std::io::ErrorKind;
 
 use ml_kem::ml_kem_1024::EncapsulationKey;

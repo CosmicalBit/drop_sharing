@@ -1,3 +1,4 @@
+//! contains the init function for the reciever
 use std::{
     io::{Error, stdin},
     net::SocketAddr,
@@ -7,7 +8,7 @@ use tokio::io;
 
 use crate::{
     discovery::{
-        connection::{Connection, Tcp, Udp},
+        connection::{Connection, Send, Serialize, Tcp, Udp},
         hostinfo::HostInfo,
         message::{Message, TransferDesision, TransferResponse},
     },
@@ -38,7 +39,7 @@ pub async fn init_receiver() -> io::Result<()> {
 
     //exchange keys
     let identity_context = key_exchange(&mut tcp_connection).await?;
-    let _secret = init_reciever_key_exchange(&mut tcp_connection, &identity_context).await?;
+    let secret = init_reciever_key_exchange(&mut tcp_connection, &identity_context).await?;
 
     Ok(())
 }
@@ -59,16 +60,17 @@ async fn confirm_connection(hostinfo: HostInfo, connection: &mut Connection<Tcp>
         match line.as_str() {
             "yes" | "y" => {
                 println!("you accepted, continuing...");
-                Message::TransferResponse(TransferResponse::new(TransferDesision::Accepted)?)
-                    .send(connection)
+                connection
+                    .send(&TransferResponse::new(TransferDesision::Accepted)?.serialize())
                     .await?;
                 return Ok(());
             },
             "no" | "n" => {
                 println!("you rejected, exiting program...");
-                Message::TransferResponse(TransferResponse::new(TransferDesision::Rejected)?)
-                    .send(connection)
+                connection
+                    .send(&TransferResponse::new(TransferDesision::Rejected)?.serialize())
                     .await?;
+
                 return Err(io::Error::new(std::io::ErrorKind::InvalidData, "user decided to abort"));
             },
             _ => println!("please enter y or n"),

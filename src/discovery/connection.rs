@@ -1,3 +1,8 @@
+//! [`Connection`] defines a connection typses and struct connection.
+//! Its all network + generalize protocol definitions, sutch as indication bytes.
+//! Everything thing that is consistent over the protocol and applies over or is related too [`Connection`] 
+//! 
+
 use std::{
     io::{self},
     net::SocketAddr,
@@ -11,6 +16,8 @@ use tokio::{
 
 use crate::identity::identity::IdentityContext;
 
+
+///Indication bytes is is used in tcp and udp connections to identify what we are reading
 #[repr(u8)]
 pub enum IndicationBytes {
     MagicInit = 1,
@@ -48,6 +55,8 @@ impl Udp {
     }
 }
 
+///[`Connection<Mode>`] is used to send data and do data operations
+/// over [`Tcp`] or [`Udp`]
 pub struct Connection<Mode> {
     mode: Mode,
 }
@@ -154,15 +163,30 @@ pub enum Size {
         total_size: fn(&[u8]) -> Option<usize>,
     },
 }
+
+///[`Deserialize`] is a trait used by everything that can be sent over the network
+/// it converts the wanted data to bytes
+/// it specifies [`Size`] which specifies if the data size is fixed or no
+/// 
+/// in fixed messages [`Size::Fixed`] contains the total size of the message including [`IndicationBytes`]
+/// 
+/// in case that its not fixed you use the [`Size::Dynamic`] that contains the header size
+/// and a fucntion that determines the full message size from tat header
+/// 
+/// [`Output`](Deserialize::Output) is the type returned gy deserialization, it normally is `Selfl` but sometimes it may be different
+/// bcs we might not want to constuct the original object. Ex: it might be unsafe bcs the whole object was not sendt over network, for exemple private keys arent sent
 pub trait Deserialize: Sized {
     const SIZE: Size;
     type Output;
     fn deserialize(data: &[u8]) -> Option<Self::Output>;
 }
 
+///the trait [`Recieve`] just specifies the recieve func signature to make make consistent over [`Connection<Mode>`] 
+/// that can be [`Tcp`] or [`Udp`] 
 pub trait Recieve {
     async fn recieve(&mut self, buffer: &mut [u8]) -> io::Result<()>;
 }
+
 pub trait Send {
     async fn send(&mut self, buffer: &[u8]) -> io::Result<()>;
 }

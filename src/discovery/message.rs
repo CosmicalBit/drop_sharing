@@ -1,3 +1,6 @@
+//! this module provides mainly [`Message`] to have an abstraction to recieving anny data type over network
+//! 
+//! it also defines [`TransferDesision`] and [`TransferResponse`] for network communication and explicitnessa acception
 use std::{
     io,
     net::{Ipv4Addr, Ipv6Addr, SocketAddr, SocketAddrV4, SocketAddrV6},
@@ -10,26 +13,25 @@ use crate::{
         connection::{
             Deserialize,
             IndicationBytes::{self},
-            Recieve, Send, Serialize, Size,
+            Recieve, Serialize, Size,
         },
-        hostinfo::{Host, HostInfo},
+        hostinfo::Host,
     },
     identity::identity::{IdentityContext, SIGNATURE_ADDED_SIZE},
 };
 
+///[`Message`] is used to be a generic stateless helper for recieving data over the network
 #[derive(PartialEq, Eq, Clone, Debug)]
-pub enum Message {
-    Address(SocketAddr),
-    HostName(HostInfo),
-    TransferResponse(TransferResponse),
-}
+pub struct Message;
 
+/// [`TransferDesision`] is used to represent if a transfier was accepted or no 
 #[repr(u8)]
 #[derive(PartialEq, Eq, Clone, Debug, EnumIter)]
 pub enum TransferDesision {
     Accepted = 1,
     Rejected = 0,
 }
+
 impl Serialize for TransferDesision {
     fn serialize(&self) -> Vec<u8> {
         vec![self.clone() as u8]
@@ -115,13 +117,6 @@ impl Deserialize for TransferResponse {
 }
 
 impl Message {
-    pub async fn send(self, connection: &mut impl Send) -> io::Result<()> {
-        match self {
-            Message::Address(addr) => connection.send(&addr.serialize()).await,
-            Message::HostName(name) => connection.send(&name.serialize()).await,
-            Message::TransferResponse(response) => connection.send(&response.serialize()).await,
-        }
-    }
     pub async fn receive<T: Deserialize>(connection: &mut impl Recieve) -> io::Result<Option<T::Output>> {
         let data = match T::SIZE {
             Size::Fixed(size) => {
@@ -206,15 +201,7 @@ impl Serialize for SocketAddr {
         }
     }
 }
-impl Serialize for Message {
-    fn serialize(&self) -> Vec<u8> {
-        match self {
-            Self::Address(addr) => addr.serialize(),
-            Self::HostName(host) => host.serialize(),
-            Self::TransferResponse(response) => response.serialize(),
-        }
-    }
-}
+
 
 impl Deserialize for SocketAddr {
     type Output = Self;
@@ -256,11 +243,11 @@ mod test {
 
     use super::*;
 
-    fn msg_sckaddr() -> (Message, Message) {
+    fn msg_sckaddr() -> (SocketAddr, SocketAddr) {
         let ipv4: SocketAddr = "127.0.0.1:4242".parse().unwrap();
         let ipv6: SocketAddr = "[::1]:4242".parse().unwrap();
 
-        (Message::Address(ipv4), Message::Address(ipv6))
+        (ipv4, ipv6)
     }
 
     #[test]
@@ -271,13 +258,13 @@ mod test {
 
         let deserialized = SocketAddr::deserialize(&serialized).unwrap();
 
-        assert_eq!(Message::Address(deserialized), org_ipv4);
+        assert_eq!(deserialized, org_ipv4);
 
         let serialized = ipv6.clone().serialize();
 
         let deserialized = SocketAddr::deserialize(&serialized).unwrap();
 
-        assert_eq!(Message::Address(deserialized), ipv6);
+        assert_eq!(deserialized, ipv6);
     }
     #[test]
     fn round_trip_of_transfer_responce() {

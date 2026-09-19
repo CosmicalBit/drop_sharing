@@ -1,3 +1,6 @@
+//! device identity and message identification
+//! 
+//! the module provides the implementation for local device cryptographic identity
 use ml_dsa::{Generate, KeyExport, KeyInit, Keypair, MlDsa87, Signature, Signer, SigningKey, Verifier, VerifyingKey};
 use tokio::io;
 
@@ -6,6 +9,7 @@ use crate::discovery::connection::{Deserialize, IndicationBytes, Serialize, Size
 const PUBLIC_KEY_SIZE: usize = 2592;
 pub type PubKey = VerifyingKey<MlDsa87>;
 
+///[`Identification`] contains the `SigningKey` and VerifyingKey`
 pub struct Identification {
     private_key: SigningKey<MlDsa87>,
     public_key: VerifyingKey<MlDsa87>,
@@ -53,6 +57,7 @@ impl Deserialize for Identification {
     }
 }
 
+/// [`IdentityContext`] contains the user [`Identification`] and its peer public key
 pub struct IdentityContext {
     my_ident: Identification,
     peer_ident: PubKey,

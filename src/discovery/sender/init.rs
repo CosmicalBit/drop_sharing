@@ -1,11 +1,12 @@
+//! contains the init function for the sender
 use tokio::io;
 
 use crate::{
     discovery::{
-        connection::{Connection, Serialize, Tcp, Udp},
+        connection::{Connection, Send, Serialize, Tcp, Udp},
         hostinfo::HostInfo,
         message::{
-            Message::{self},
+            Message,
             TransferResponse,
         },
     },
@@ -16,17 +17,17 @@ use crate::{
 pub async fn sender_init(num_of_files: u32) -> io::Result<()> {
     let (_tcp_connection, my_socket_addr) = Connection::<Tcp>::new_listen().await?;
 
-    let msg = Message::Address(my_socket_addr).serialize();
+    let msg = my_socket_addr.serialize();
 
     //send to udp
     Connection::<Udp>::start_broadcast_and_send(&msg).await?;
 
-    let host = Message::HostName(HostInfo::new(num_of_files)?);
 
     let mut tcp_connection = Connection::<Tcp>::new(my_socket_addr).await?;
 
     //send host
-    host.send(&mut tcp_connection).await?;
+    let host = &HostInfo::new(num_of_files)?.serialize();
+    tcp_connection.send(host).await?;
 
     // Read receiver confirmation.
     let confirmation = Message::receive::<TransferResponse>(&mut tcp_connection)
