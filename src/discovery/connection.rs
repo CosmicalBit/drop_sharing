@@ -3,17 +3,23 @@ use std::{
     net::SocketAddr,
 };
 
+use ml_dsa::SignatureEncoding;
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
     net::{TcpListener, TcpStream, UdpSocket},
 };
 
+use crate::identity::identity::IdentityContext;
+
 #[repr(u8)]
 pub enum IndicationBytes {
-    MagicInit = 0x1,
-    HostInfo = 0x2,
-    HostName = 0x4,
-    TransferResponse = 0x3,
+    MagicInit = 1,
+    HostInfo = 2,
+    TransferResponse = 3,
+    HostName = 4,
+    PubKeySend = 5,
+    Ciphertxt = 6,
+    PublicIdentKey,
 }
 
 impl From<u8> for IndicationBytes {
@@ -81,6 +87,17 @@ impl Send for Connection<Tcp> {
         Ok(())
     }
 }
+impl SendSign for Connection<Tcp> {
+    async fn send_n_sign(&mut self, buffer: &[u8], identity_context: &IdentityContext) -> io::Result<()> {
+        let signature = identity_context.sign(buffer).to_bytes();
+        let mut signed = Vec::with_capacity(buffer.len() + signature.len());
+        signed.extend_from_slice(buffer);
+        signed.extend_from_slice(&signature);
+        self.mode.stream.write_all(&signed).await?;
+
+        Ok(())
+    }
+}
 
 impl Recieve for Connection<Tcp> {
     async fn recieve(&mut self, buffer: &mut [u8]) -> io::Result<()> {
@@ -127,7 +144,7 @@ impl Recieve for Connection<Udp> {
     }
 }
 pub trait Serialize {
-    fn serialize(self) -> Vec<u8>;
+    fn serialize(&self) -> Vec<u8>;
 }
 
 pub enum Size {
@@ -139,8 +156,8 @@ pub enum Size {
 }
 pub trait Deserialize: Sized {
     const SIZE: Size;
-
-    fn deserialize(data: &[u8]) -> Option<Self>;
+    type Output;
+    fn deserialize(data: &[u8]) -> Option<Self::Output>;
 }
 
 pub trait Recieve {
@@ -148,4 +165,7 @@ pub trait Recieve {
 }
 pub trait Send {
     async fn send(&mut self, buffer: &[u8]) -> io::Result<()>;
+}
+pub trait SendSign {
+    async fn send_n_sign(&mut self, buffer: &[u8], identity_context: &IdentityContext) -> io::Result<()>;
 }

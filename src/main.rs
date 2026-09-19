@@ -14,6 +14,7 @@ mod arguments;
 mod discovery;
 mod encryption;
 mod file_collection;
+mod identity;
 
 #[tokio::main]
 async fn main() -> io::Result<()> {

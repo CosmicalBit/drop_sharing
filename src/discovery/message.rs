@@ -3,15 +3,18 @@ use std::{
     net::{Ipv4Addr, Ipv6Addr, SocketAddr, SocketAddrV4, SocketAddrV6},
 };
 
-use strum::{EnumIter, IntoEnumIterator};
+use strum::EnumIter;
 
-use crate::discovery::{
-    hostinfo::{Host, HostInfo},
-    lib::{
-        Deserialize,
-        IndicationBytes::{self},
-        Recieve, Send, Serialize, Size,
+use crate::{
+    discovery::{
+        connection::{
+            Deserialize,
+            IndicationBytes::{self},
+            Recieve, Send, Serialize, Size,
+        },
+        hostinfo::{Host, HostInfo},
     },
+    identity::identity::{IdentityContext, SIGNATURE_ADDED_SIZE},
 };
 
 #[derive(PartialEq, Eq, Clone, Debug)]
@@ -28,8 +31,8 @@ pub enum TransferDesision {
     Rejected = 0,
 }
 impl Serialize for TransferDesision {
-    fn serialize(self) -> Vec<u8> {
-        vec![self as u8]
+    fn serialize(&self) -> Vec<u8> {
+        vec![self.clone() as u8]
     }
 }
 
@@ -57,7 +60,7 @@ impl TransferResponse {
 }
 
 impl Serialize for TransferResponse {
-    fn serialize(self) -> Vec<u8> {
+    fn serialize(&self) -> Vec<u8> {
         let mut vec = Vec::new();
 
         vec.push(IndicationBytes::TransferResponse as u8);
@@ -68,6 +71,7 @@ impl Serialize for TransferResponse {
 }
 impl Deserialize for TransferDesision {
     const SIZE: Size = Size::Fixed(1);
+    type Output = Self;
 
     fn deserialize(data: &[u8]) -> Option<Self> {
         const ACCEPT: u8 = TransferDesision::Accepted as u8;
@@ -82,6 +86,7 @@ impl Deserialize for TransferDesision {
 }
 
 impl Deserialize for TransferResponse {
+    type Output = Self;
     const SIZE: Size = Size::Dynamic {
         header_size: 6,
         total_size: |header| {
@@ -117,7 +122,7 @@ impl Message {
             Message::TransferResponse(response) => connection.send(&response.serialize()).await,
         }
     }
-    pub async fn receive<T: Deserialize>(connection: &mut impl Recieve) -> io::Result<Option<T>> {
+    pub async fn receive<T: Deserialize>(connection: &mut impl Recieve) -> io::Result<Option<T::Output>> {
         let data = match T::SIZE {
             Size::Fixed(size) => {
                 let mut data = vec![0; size];
@@ -142,10 +147,41 @@ impl Message {
 
         Ok(T::deserialize(&data))
     }
+
+    pub async fn receive_signed<T: Deserialize>(
+        connection: &mut impl Recieve,
+        identity_context: &IdentityContext,
+    ) -> io::Result<Option<T::Output>> {
+        let data = match T::SIZE {
+            Size::Fixed(size) => {
+                let mut data = vec![0; size + SIGNATURE_ADDED_SIZE];
+                connection.recieve(&mut data).await?;
+                data
+            },
+
+            Size::Dynamic { header_size, total_size } => {
+                let mut data = vec![0; header_size];
+                connection.recieve(&mut data).await?;
+
+                let Some(total) = total_size(&data) else {
+                    return Ok(None);
+                };
+
+                data.resize(total + SIGNATURE_ADDED_SIZE, 0);
+                connection.recieve(&mut data[header_size..]).await?;
+
+                data
+            },
+        };
+
+        let data = identity_context.check_signature(&data)?;
+
+        Ok(T::deserialize(data))
+    }
 }
 
 impl Serialize for SocketAddr {
-    fn serialize(self) -> Vec<u8> {
+    fn serialize(&self) -> Vec<u8> {
         match self {
             SocketAddr::V4(addr) => {
                 let mut out = Vec::with_capacity(20);
@@ -171,7 +207,7 @@ impl Serialize for SocketAddr {
     }
 }
 impl Serialize for Message {
-    fn serialize(self) -> Vec<u8> {
+    fn serialize(&self) -> Vec<u8> {
         match self {
             Self::Address(addr) => addr.serialize(),
             Self::HostName(host) => host.serialize(),
@@ -181,6 +217,7 @@ impl Serialize for Message {
 }
 
 impl Deserialize for SocketAddr {
+    type Output = Self;
     const SIZE: Size = Size::Fixed(20);
 
     fn deserialize(data: &[u8]) -> Option<Self> {
@@ -215,6 +252,8 @@ impl Deserialize for SocketAddr {
 
 #[cfg(test)]
 mod test {
+    use strum::IntoEnumIterator;
+
     use super::*;
 
     fn msg_sckaddr() -> (Message, Message) {

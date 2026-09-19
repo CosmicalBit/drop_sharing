@@ -1,2 +1,2 @@
-mod key_exchange;
-mod keygen;
+pub(crate) mod key_exchange;
+pub mod keygen;

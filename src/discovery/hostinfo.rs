@@ -2,7 +2,7 @@ use std::io::Error;
 
 use tokio::io;
 
-use crate::discovery::lib::{Deserialize, IndicationBytes, Serialize, Size};
+use crate::discovery::connection::{Deserialize, IndicationBytes, Serialize, Size};
 
 #[derive(PartialEq, Eq, Debug, Clone)]
 pub struct Host {
@@ -24,14 +24,14 @@ impl Host {
     }
 }
 impl Serialize for Host {
-    fn serialize(self) -> Vec<u8> {
+    fn serialize(&self) -> Vec<u8> {
         let bytes = self.name.as_bytes();
         let len = bytes.len() as u32;
 
         let mut vec = Vec::with_capacity(bytes.len() + 5);
         vec.push(IndicationBytes::HostName as u8);
         vec.extend_from_slice(&len.to_be_bytes());
-        vec.extend_from_slice(&bytes);
+        vec.extend_from_slice(bytes);
         vec
     }
 }
@@ -47,6 +47,7 @@ impl Deserialize for Host {
             Some(5 + len)
         },
     };
+    type Output = Self;
     fn deserialize(data: &[u8]) -> Option<Self> {
         if data.first().copied()? != IndicationBytes::HostName as u8 {
             return None;
@@ -86,7 +87,7 @@ impl HostInfo {
 }
 
 impl Serialize for HostInfo {
-    fn serialize(self) -> Vec<u8> {
+    fn serialize(&self) -> Vec<u8> {
         let name = &self.host.serialize();
         let len = name.len() as u32;
         let num_file_as_bytes = self.num_of_files.to_be_bytes();
@@ -107,12 +108,13 @@ impl Deserialize for HostInfo {
     const SIZE: Size = Size::Dynamic {
         header_size: 5,
         total_size: |header| {
-            let name_len = u32::from_be_bytes(header[1..5].try_into().ok()?) as usize;
+            let name_len = u32::from_be_bytes(header.get(1..5)?.try_into().ok()?) as usize;
 
             //header + name + num_of_Files
             Some(5 + name_len + 4)
         },
     };
+    type Output = Self;
 
     fn deserialize(data: &[u8]) -> Option<Self>
     where
@@ -122,9 +124,9 @@ impl Deserialize for HostInfo {
             return None;
         }
 
-        let len = u32::from_be_bytes(data[1..5].try_into().ok()?);
-        let host = Host::deserialize(&data[5..5 + len as usize])?;
-        let num_of_files = u32::from_be_bytes(data[5 + len as usize..9 + len as usize].try_into().ok()?);
+        let len = u32::from_be_bytes(data.get(1..5)?.try_into().ok()?);
+        let host = Host::deserialize(data.get(5..5 + len as usize)?)?;
+        let num_of_files = u32::from_be_bytes(data.get(5 + len as usize..9 + len as usize)?.try_into().ok()?);
 
         Some(HostInfo { host, num_of_files })
     }

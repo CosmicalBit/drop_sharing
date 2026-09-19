@@ -1,12 +1,16 @@
 use tokio::io;
 
-use crate::discovery::{
-    hostinfo::HostInfo,
-    lib::{Connection, Serialize, Tcp, Udp},
-    message::{
-        Message::{self},
-        TransferResponse,
+use crate::{
+    discovery::{
+        connection::{Connection, Serialize, Tcp, Udp},
+        hostinfo::HostInfo,
+        message::{
+            Message::{self},
+            TransferResponse,
+        },
     },
+    encryption::key_agreement::sender::key_exchange::init_sender_key_exchange,
+    identity::identity_exchange::key_exchange,
 };
 
 pub async fn sender_init(num_of_files: u32) -> io::Result<()> {
@@ -30,6 +34,8 @@ pub async fn sender_init(num_of_files: u32) -> io::Result<()> {
         .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidData, "error parsing confirmation"))?;
     confirmation.confirm()?;
 
-    //start key agrrement
+    //start ident exchange
+    let identity_context = key_exchange(&mut tcp_connection).await?;
+    let _secret = init_sender_key_exchange(&mut tcp_connection, &identity_context).await?;
     Ok(())
 }

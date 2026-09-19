@@ -5,10 +5,14 @@ use std::{
 
 use tokio::io;
 
-use crate::discovery::{
-    hostinfo::HostInfo,
-    lib::{Connection, Tcp, Udp},
-    message::{Message, TransferDesision, TransferResponse},
+use crate::{
+    discovery::{
+        connection::{Connection, Tcp, Udp},
+        hostinfo::HostInfo,
+        message::{Message, TransferDesision, TransferResponse},
+    },
+    encryption::key_agreement::receiver::init_reciever_key_exchange,
+    identity::identity_exchange::key_exchange,
 };
 
 pub async fn init_receiver() -> io::Result<()> {
@@ -31,6 +35,10 @@ pub async fn init_receiver() -> io::Result<()> {
 
     //confirm if user wants to reciecve data
     confirm_connection(host, &mut tcp_connection).await?;
+
+    //exchange keys
+    let identity_context = key_exchange(&mut tcp_connection).await?;
+    let _secret = init_reciever_key_exchange(&mut tcp_connection, &identity_context).await?;
 
     Ok(())
 }
