@@ -37,6 +37,13 @@ On the receiving device, start the receiver:
 cargo run --release -- start-receiver
 ```
 
+To keep the receiver running and confirm incoming transfers through desktop
+notifications, use daemon mode:
+
+```sh
+cargo run --release -- start-receiver --daemon
+```
+
 On the sending device, provide the path to the directory to send:
 
 ```sh
