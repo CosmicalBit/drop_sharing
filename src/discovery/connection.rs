@@ -66,7 +66,7 @@ impl Connection<Tcp> {
 
         Ok(Self { mode: Tcp::new(socket) })
     }
-    pub async fn accept(listener: TcpListener) -> io::Result<Self> {
+    pub async fn accept(listener: &TcpListener) -> io::Result<Self> {
         let (stream, _sender) = listener.accept().await?;
 
         Ok(Self { mode: Tcp::new(stream) })

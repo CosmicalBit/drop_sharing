@@ -1,5 +1,9 @@
 //! contains the init function for the sender
-use tokio::io;
+use std::time::Duration;
+
+use tokio::{io, time::timeout};
+const DISCOVERY_ATTEMPTS: usize = 5;
+const DISCOVERY_TIMEOUT: Duration = Duration::from_secs(5);
 
 use crate::{
     discovery::{
@@ -19,9 +23,22 @@ pub async fn sender_init(num_of_files: u32) -> io::Result<(Secret, Connection<Tc
 
     let msg = DiscoveryMessage::new(my_socket_addr, &identification);
     //send to udp
-    Connection::<Udp>::start_broadcast_and_send(&msg.serialize()).await?;
+    let serialized = msg.serialize();
 
-    let mut tcp_connection = Connection::<Tcp>::accept(listener).await?;
+    let mut tcp_connection = 'connected: {
+        for _attempt in 0..DISCOVERY_ATTEMPTS {
+            Connection::<Udp>::start_broadcast_and_send(&serialized).await?;
+            match timeout(DISCOVERY_TIMEOUT, Connection::<Tcp>::accept(&listener)).await {
+                Ok(result) => break 'connected result?,
+                Err(_) => continue,
+            }
+        }
+
+        return Err(io::Error::new(
+            io::ErrorKind::TimedOut,
+            "discovery timed out waiting for a receiver",
+        ));
+    };
 
     //send host
     let host = &HostInfo::new(num_of_files)?.serialize();
