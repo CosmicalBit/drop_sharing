@@ -7,7 +7,10 @@ use crate::{
         Cli,
         Command::{StartReceiver, StartSender},
     },
-    discovery::{receiver::init::init_receiver, sender::init::sender_init},
+    discovery::{
+        receiver::init::{ConfirmMode, receive_once},
+        sender::init::sender_init,
+    },
     encryption::cipher::{Cipher, TransferError},
     file_collection::{
         send_chunked::{collect_files, send_files},
@@ -35,14 +38,17 @@ async fn main() -> Result<(), TransferError> {
             let cipher = Cipher::try_from(secret)?;
 
             send_files(&headers, &cipher, &mut tcp).await?;
+            return Ok(());
         },
 
-        StartReceiver => {
-            let (secret, mut tcp, file_count) = init_receiver().await?;
-
-            let cipher = Cipher::try_from(secret)?;
-
-            collect_files(file_count, Path::new("received_files"), &cipher, &mut tcp).await?;
+        StartReceiver(args) => {
+            if args.daemon {
+                loop {
+                    receive_once(ConfirmMode::Notification).await?;
+                }
+            } else {
+                receive_once(ConfirmMode::Terminal).await?;
+            }
         },
     }
 

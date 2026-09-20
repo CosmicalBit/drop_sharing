@@ -1,6 +1,6 @@
 use std::path::PathBuf;
 
-use clap::{Parser, Subcommand};
+use clap::{Args, Parser, Subcommand};
 
 #[derive(Parser)]
 pub struct Cli {
@@ -11,11 +11,17 @@ pub struct Cli {
 #[derive(Subcommand)]
 pub enum Command {
     StartSender(StartArgs),
-    StartReceiver,
+    StartReceiver(ReceiverArgs),
 }
 
-#[derive(Parser)]
+#[derive(Args)]
 pub struct StartArgs {
     pub directory: PathBuf,
     pub name: Option<String>,
+}
+
+#[derive(Args)]
+pub struct ReceiverArgs {
+    #[arg(long, default_value_t = false)]
+    pub daemon: bool,
 }
