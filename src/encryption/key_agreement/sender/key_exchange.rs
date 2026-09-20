@@ -10,7 +10,7 @@ use crate::{
         message::Message,
     },
     encryption::key_agreement::sender::keygen::{KeyPair, Secret},
-    identity::identity::IdentityContext,
+    identity::identity_definition::IdentityContext,
 };
 
 pub(crate) async fn init_sender_key_exchange(

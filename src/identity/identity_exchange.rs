@@ -5,24 +5,25 @@ use crate::{
         connection::{Recieve, Send, Serialize},
         message::Message,
     },
-    identity::identity::{Identification, IdentityContext},
+    identity::identity_definition::{Identification, IdentityContext},
 };
 
 ///Does the key exchange and returns [`IdentityContext`]
-pub async fn key_exchange(tcp: &mut (impl Send + Recieve)) -> io::Result<IdentityContext> {
+pub async fn key_exchange(tcp: &mut (impl Send + Recieve), my_identification: Identification) -> io::Result<IdentityContext> {
     //init sender_ident
-    let sender_signing = Identification::new();
 
     //send and recieve normally bcs until now theres no [`IdentityContext`]
     //send sender ident
-    tcp.send(&sender_signing.serialize()).await?;
+    tcp.send(&my_identification.serialize()).await?;
 
     let pubkey = Message::receive::<Identification>(tcp)
         .await?
         .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidData, "invalid identification msg"))?;
 
-    Ok(IdentityContext::new(sender_signing, pubkey))
+    Ok(IdentityContext::new(my_identification, pubkey))
 }
+
+
 
 #[cfg(test)]
 mod tests {
@@ -70,7 +71,12 @@ mod tests {
         timeout(Duration::from_secs(10), async {
             let (mut sender, mut receiver) = connected_pair();
 
-            let (sender_identity, receiver_identity) = tokio::try_join!(key_exchange(&mut sender), key_exchange(&mut receiver))?;
+            let sender_identification = Identification::new();
+            let receiver_identification = Identification::new();
+            let (sender_identity, receiver_identity) = tokio::try_join!(
+                key_exchange(&mut sender, sender_identification),
+                key_exchange(&mut receiver, receiver_identification),
+            )?;
 
             let (sender_secret, receiver_secret) = tokio::try_join!(
                 init_sender_key_exchange(&mut sender, &sender_identity),

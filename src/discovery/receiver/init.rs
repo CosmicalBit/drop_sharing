@@ -1,8 +1,5 @@
 //! contains the init function for the reciever
-use std::{
-    io::{Error, stdin},
-    net::SocketAddr,
-};
+use std::io::{Error, stdin};
 
 use tokio::io;
 
@@ -11,23 +8,25 @@ use crate::{
         connection::{Connection, Send, Serialize, Tcp, Udp},
         hostinfo::HostInfo,
         message::{Message, TransferDesision, TransferResponse},
+        udp_logic::DiscoveryMessage,
     },
     encryption::key_agreement::receiver::init_reciever_key_exchange,
-    identity::identity_exchange::key_exchange,
+    identity::{identity_definition::Identification, identity_exchange::key_exchange},
 };
 
 pub async fn init_receiver() -> io::Result<()> {
+    let identification = Identification::new();
     let mut udp = Connection::<Udp>::new_listen().await?;
 
-    let socket_addr = loop {
-        let Some(socket_addr) = Message::receive::<SocketAddr>(&mut udp).await? else {
+    let discoverer_msg = loop {
+        let Some(socket_addr) = Message::receive::<DiscoveryMessage>(&mut udp).await? else {
             continue;
         };
         break socket_addr;
     };
 
     //connect to it
-    let mut tcp_connection = Connection::<Tcp>::new_send_n_listen(socket_addr, udp).await?;
+    let mut tcp_connection = Connection::<Tcp>::new_send_n_listen(discoverer_msg.socket(), udp).await?;
 
     //read_host
     let host = Message::receive::<HostInfo>(&mut tcp_connection)
@@ -38,8 +37,12 @@ pub async fn init_receiver() -> io::Result<()> {
     confirm_connection(host, &mut tcp_connection).await?;
 
     //exchange keys
-    let identity_context = key_exchange(&mut tcp_connection).await?;
-    let secret = init_reciever_key_exchange(&mut tcp_connection, &identity_context).await?;
+    let identity_context = key_exchange(&mut tcp_connection, identification).await?;
+
+    //check if the recieved pubident hash matches the actual key exchange identity
+    identity_context.verify_identifiy(discoverer_msg)?;
+    
+    let _secret = init_reciever_key_exchange(&mut tcp_connection, &identity_context).await?;
 
     Ok(())
 }

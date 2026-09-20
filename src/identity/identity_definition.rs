@@ -1,10 +1,15 @@
 //! device identity and message identification
-//! 
+//!
 //! the module provides the implementation for local device cryptographic identity
+use std::hash::Hash;
+
 use ml_dsa::{Generate, KeyExport, KeyInit, Keypair, MlDsa87, Signature, Signer, SigningKey, Verifier, VerifyingKey};
 use tokio::io;
 
-use crate::discovery::connection::{Deserialize, IndicationBytes, Serialize, Size};
+use crate::discovery::{
+    connection::{Deserialize, IndicationBytes, Serialize, Size},
+    udp_logic::DiscoveryMessage,
+};
 
 const PUBLIC_KEY_SIZE: usize = 2592;
 pub type PubKey = VerifyingKey<MlDsa87>;
@@ -24,6 +29,9 @@ impl Identification {
             private_key: private,
             public_key: public,
         }
+    }
+    pub fn hash(&self) -> blake3::Hash {
+        blake3::hash(&self.public_key.to_bytes())
     }
 }
 
@@ -88,6 +96,22 @@ impl IdentityContext {
             .map_err(|_err| io::Error::new(io::ErrorKind::InvalidData, "detected the wrong signature"))?;
 
         Ok(data)
+    }
+
+    ///check if the recieved [`Identification`] hash matches the actual key exchange [`DiscoveryMessage`] finger_print
+    pub fn verify_identifiy(&self, proclamed_identity: DiscoveryMessage) -> io::Result<()> {
+        let veri_key_bytes = self.peer_ident.to_bytes();
+
+        let hash = blake3::hash(&veri_key_bytes);
+
+        if hash != proclamed_identity.figer_print() {
+            return Err(io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                "peer identity didint match discovery identity",
+            ));
+        }
+
+        Ok(())
     }
 }
 

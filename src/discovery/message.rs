@@ -17,7 +17,7 @@ use crate::{
         },
         hostinfo::Host,
     },
-    identity::identity::{IdentityContext, SIGNATURE_ADDED_SIZE},
+    identity::identity_definition::{IdentityContext, SIGNATURE_ADDED_SIZE},
 };
 
 ///[`Message`] is used to be a generic stateless helper for recieving data over the network

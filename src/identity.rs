@@ -1,2 +1,2 @@
-pub mod identity;
+pub mod identity_definition;
 pub mod identity_exchange;

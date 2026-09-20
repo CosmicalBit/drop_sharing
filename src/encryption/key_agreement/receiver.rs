@@ -10,7 +10,7 @@ use crate::{
         message::Message,
     },
     encryption::key_agreement::sender::keygen::Secret,
-    identity::identity::IdentityContext,
+    identity::identity_definition::IdentityContext,
 };
 pub(crate) async fn init_reciever_key_exchange(
     tcp_conn: &mut (impl Recieve + SendSign),
