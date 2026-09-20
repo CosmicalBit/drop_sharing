@@ -1,11 +1,11 @@
-//! this file implemts the necessary abstraction to 
+//! this file implemts the necessary abstraction to
 //! extract Host related information sutch as [`Host`] and [`HostInfo`]
 
 use std::io::Error;
 
 use tokio::io;
 
-use crate::discovery::connection::{Deserialize, IndicationBytes, Serialize, Size};
+use crate::discovery::connection::{DecodeError, Deserialize, IndicationBytes, Serialize, Size};
 
 /// [`Host`] contains the computer host name
 #[derive(PartialEq, Eq, Debug, Clone)]
@@ -47,22 +47,54 @@ impl Deserialize for Host {
     const SIZE: Size = Size::Dynamic {
         header_size: 5,
         total_size: |header| {
-            if header.first().copied()? != IndicationBytes::HostName as u8 {
-                return None;
-            }
-            let len = u32::from_be_bytes(header.get(1..5)?.try_into().ok()?) as usize;
+            let indication = header.first().ok_or(DecodeError::Truncated {
+                expected: 1,
+                actual: header.len(),
+            })?;
 
-            Some(5 + len)
+            if *indication != IndicationBytes::HostName as u8 {
+                return Err(DecodeError::UnexpectedIndicationType {
+                    expected: IndicationBytes::HostName,
+                    actual: *indication,
+                });
+            }
+            let len_bytes = header.get(1..5).ok_or(DecodeError::Truncated {
+                expected: 5,
+                actual: header.len(),
+            })?;
+
+            let len = u32::from_be_bytes(len_bytes.try_into().expect("1..5 is exacly 4 bytes")) as usize;
+
+            Ok(5 + len)
         },
     };
     type Output = Self;
-    fn deserialize(data: &[u8]) -> Option<Self> {
-        if data.first().copied()? != IndicationBytes::HostName as u8 {
-            return None;
-        }
-        let len = u32::from_be_bytes(data.get(1..5)?.try_into().ok()?) as usize;
+    fn deserialize(data: &[u8]) -> Result<Self, DecodeError> {
+        let indication = data.first().ok_or(DecodeError::Truncated {
+            expected: 1,
+            actual: data.len(),
+        })?;
 
-        Host::try_from(data.get(5..5 + len)?).ok()
+        if *indication != IndicationBytes::HostName as u8 {
+            return Err(DecodeError::UnexpectedIndicationType {
+                expected: IndicationBytes::HostName,
+                actual: *indication,
+            });
+        }
+
+        let len_bytes = data.get(1..5).ok_or(DecodeError::Truncated {
+            expected: 5,
+            actual: data.len(),
+        })?;
+
+        let len = u32::from_be_bytes(len_bytes.try_into().expect("1..5 always contains 4 bytes")) as usize;
+
+        let name = data.get(5..5 + len).ok_or(DecodeError::InvalidLen {
+            declared: len,
+            available: data.len().saturating_sub(5),
+        })?;
+
+        Ok(Host::try_from(name)?)
     }
 }
 impl TryFrom<&[u8]> for Host {
@@ -117,27 +149,68 @@ impl Deserialize for HostInfo {
     const SIZE: Size = Size::Dynamic {
         header_size: 5,
         total_size: |header| {
-            let name_len = u32::from_be_bytes(header.get(1..5)?.try_into().ok()?) as usize;
+            let indication = header.first().ok_or(DecodeError::Truncated {
+                expected: 1,
+                actual: header.len(),
+            })?;
+
+            if *indication != IndicationBytes::HostInfo as u8 {
+                return Err(DecodeError::UnexpectedIndicationType {
+                    expected: IndicationBytes::HostInfo,
+                    actual: *indication,
+                });
+            }
+
+            let len_bytes = header.get(1..5).ok_or(DecodeError::InvalidLen {
+                declared: 4,
+                available: header.len(),
+            })?;
+
+            let name_len = u32::from_be_bytes(len_bytes.try_into().expect("1..5 is 4 bytes")) as usize;
 
             //header + name + num_of_Files
-            Some(5 + name_len + 4)
+            Ok(5 + name_len + 4)
         },
     };
     type Output = Self;
 
-    fn deserialize(data: &[u8]) -> Option<Self>
-    where
-        Self: Sized,
-    {
-        if data[0] != IndicationBytes::HostInfo as u8 {
-            return None;
+    fn deserialize(data: &[u8]) -> Result<Self, DecodeError> {
+        let indication = data.first().ok_or(DecodeError::Truncated {
+            expected: 1,
+            actual: data.len(),
+        })?;
+        if *indication != IndicationBytes::HostInfo as u8 {
+            return Err(DecodeError::UnexpectedIndicationType {
+                expected: IndicationBytes::HostInfo,
+                actual: *indication,
+            });
         }
 
-        let len = u32::from_be_bytes(data.get(1..5)?.try_into().ok()?);
-        let host = Host::deserialize(data.get(5..5 + len as usize)?)?;
-        let num_of_files = u32::from_be_bytes(data.get(5 + len as usize..9 + len as usize)?.try_into().ok()?);
+        let len_bytes = data.get(1..5).ok_or(DecodeError::Truncated {
+            expected: 5,
+            actual: data.len(),
+        })?;
+        let len = u32::from_be_bytes(len_bytes.try_into().expect("1..5 is exactly 4 bytes")) as usize;
+        let payload_end = 5usize.checked_add(len).ok_or(DecodeError::InvalidLen {
+            declared: len,
+            available: data.len().saturating_sub(5),
+        })?;
+        let host_bytes = data.get(5..payload_end).ok_or(DecodeError::InvalidLen {
+            declared: len,
+            available: data.len().saturating_sub(5),
+        })?;
+        let host = Host::deserialize(host_bytes)?;
+        let file_count_end = payload_end.checked_add(4).ok_or(DecodeError::InvalidLen {
+            declared: len + 4,
+            available: data.len().saturating_sub(5),
+        })?;
+        let file_count_bytes = data.get(payload_end..file_count_end).ok_or(DecodeError::Truncated {
+            expected: file_count_end,
+            actual: data.len(),
+        })?;
+        let num_of_files = u32::from_be_bytes(file_count_bytes.try_into().expect("file count is exactly 4 bytes"));
 
-        Some(HostInfo { host, num_of_files })
+        Ok(HostInfo { host, num_of_files })
     }
 }
 

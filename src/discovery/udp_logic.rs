@@ -1,7 +1,7 @@
 use std::net::SocketAddr;
 
 use crate::{
-    discovery::connection::{Deserialize, IndicationBytes, Serialize, Size},
+    discovery::connection::{DecodeError, Deserialize, IndicationBytes, Serialize, Size},
     identity::identity_definition::Identification,
 };
 
@@ -14,8 +14,6 @@ pub struct DiscoveryMessage {
     finger_print: blake3::Hash,
 }
 
-
-
 impl DiscoveryMessage {
     pub fn new(addr: SocketAddr, identification: &Identification) -> Self {
         DiscoveryMessage {
@@ -23,10 +21,10 @@ impl DiscoveryMessage {
             finger_print: identification.hash(),
         }
     }
-    pub fn socket(&self)->SocketAddr{
+    pub fn socket(&self) -> SocketAddr {
         self.socket
     }
-    pub fn figer_print(&self)-> blake3::Hash{
+    pub fn figer_print(&self) -> blake3::Hash {
         self.finger_print
     }
 }
@@ -49,30 +47,66 @@ impl Deserialize for DiscoveryMessage {
     const SIZE: Size = Size::Dynamic {
         header_size: 3,
         total_size: |header| {
-            if header.first().copied()? != IndicationBytes::MagicInit as u8
-                || header.get(1).copied()? != IndicationBytes::MagicInit as u8
-                || !matches!(header.get(2), Some(4 | 6))
-            {
-                return None;
+            let first = *header.first().ok_or(DecodeError::Truncated {
+                expected: 1,
+                actual: header.len(),
+            })?;
+            if first != IndicationBytes::MagicInit as u8 {
+                return Err(DecodeError::UnexpectedIndicationType {
+                    expected: IndicationBytes::MagicInit,
+                    actual: first,
+                });
+            }
+            let socket_indication = *header.get(1).ok_or(DecodeError::Truncated {
+                expected: 2,
+                actual: header.len(),
+            })?;
+            if socket_indication != IndicationBytes::MagicInit as u8 {
+                return Err(DecodeError::UnexpectedIndicationType {
+                    expected: IndicationBytes::MagicInit,
+                    actual: socket_indication,
+                });
+            }
+            if !matches!(header.get(2), Some(4 | 6)) {
+                return Err(DecodeError::InvalidValue("unsupported IP version"));
             }
 
-            Some(DISCOVERY_MESSAGE_SIZE)
+            Ok(DISCOVERY_MESSAGE_SIZE)
         },
     };
 
-    fn deserialize(data: &[u8]) -> Option<Self> {
-        if data.len() != DISCOVERY_MESSAGE_SIZE
-            || data.first().copied()? != IndicationBytes::MagicInit as u8
-            || data.get(1).copied()? != IndicationBytes::MagicInit as u8
-            || !matches!(data.get(2), Some(4 | 6))
-        {
-            return None;
+    fn deserialize(data: &[u8]) -> Result<Self, DecodeError> {
+        if data.len() < DISCOVERY_MESSAGE_SIZE {
+            return Err(DecodeError::Truncated {
+                expected: DISCOVERY_MESSAGE_SIZE,
+                actual: data.len(),
+            });
+        }
+        let first = data[0];
+        if first != IndicationBytes::MagicInit as u8 {
+            return Err(DecodeError::UnexpectedIndicationType {
+                expected: IndicationBytes::MagicInit,
+                actual: first,
+            });
+        }
+        let socket_indication = data[1];
+        if socket_indication != IndicationBytes::MagicInit as u8 {
+            return Err(DecodeError::UnexpectedIndicationType {
+                expected: IndicationBytes::MagicInit,
+                actual: socket_indication,
+            });
+        }
+        if !matches!(data.get(2), Some(4 | 6)) {
+            return Err(DecodeError::InvalidValue("unsupported IP version"));
         }
 
-        let socket = SocketAddr::deserialize(data.get(1..1 + SOCKET_ADDR_SIZE)?)?;
-        let finger_print = blake3::Hash::from_bytes(data.get(1 + SOCKET_ADDR_SIZE..)?.try_into().ok()?);
+        let socket = SocketAddr::deserialize(&data[1..1 + SOCKET_ADDR_SIZE])?;
+        let fingerprint_bytes: &[u8; FINGERPRINT_SIZE] = data[1 + SOCKET_ADDR_SIZE..DISCOVERY_MESSAGE_SIZE]
+            .try_into()
+            .expect("fingerprint slice is exactly 32 bytes");
+        let finger_print = blake3::Hash::from_bytes(*fingerprint_bytes);
 
-        Some(Self { socket, finger_print })
+        Ok(Self { socket, finger_print })
     }
 }
 
@@ -111,9 +145,9 @@ mod tests {
         };
         let mut serialized = message.serialize();
 
-        assert!(DiscoveryMessage::deserialize(&serialized[..serialized.len() - 1]).is_none());
+        assert!(DiscoveryMessage::deserialize(&serialized[..serialized.len() - 1]).is_err());
 
         serialized[1] = 0;
-        assert!(DiscoveryMessage::deserialize(&serialized).is_none());
+        assert!(DiscoveryMessage::deserialize(&serialized).is_err());
     }
 }

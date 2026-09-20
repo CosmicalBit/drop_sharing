@@ -1,5 +1,5 @@
 //! this module provides mainly [`Message`] to have an abstraction to recieving anny data type over network
-//! 
+//!
 //! it also defines [`TransferDesision`] and [`TransferResponse`] for network communication and explicitnessa acception
 use std::{
     io,
@@ -11,7 +11,7 @@ use strum::EnumIter;
 use crate::{
     discovery::{
         connection::{
-            Deserialize,
+            DecodeError, Deserialize,
             IndicationBytes::{self},
             Recieve, Serialize, Size,
         },
@@ -24,7 +24,7 @@ use crate::{
 #[derive(PartialEq, Eq, Clone, Debug)]
 pub struct Message;
 
-/// [`TransferDesision`] is used to represent if a transfier was accepted or no 
+/// [`TransferDesision`] is used to represent if a transfier was accepted or no
 #[repr(u8)]
 #[derive(PartialEq, Eq, Clone, Debug, EnumIter)]
 pub enum TransferDesision {
@@ -75,14 +75,17 @@ impl Deserialize for TransferDesision {
     const SIZE: Size = Size::Fixed(1);
     type Output = Self;
 
-    fn deserialize(data: &[u8]) -> Option<Self> {
+    fn deserialize(data: &[u8]) -> Result<Self, DecodeError> {
         const ACCEPT: u8 = TransferDesision::Accepted as u8;
         const REJECT: u8 = TransferDesision::Rejected as u8;
 
-        match *data.first()? {
-            ACCEPT => Some(TransferDesision::Accepted),
-            REJECT => Some(TransferDesision::Rejected),
-            _ => None,
+        match *data.first().ok_or(DecodeError::Truncated {
+            expected: 1,
+            actual: data.len(),
+        })? {
+            ACCEPT => Ok(TransferDesision::Accepted),
+            REJECT => Ok(TransferDesision::Rejected),
+            _ => Err(DecodeError::InvalidValue("invalid transfer decision")),
         }
     }
 }
@@ -92,32 +95,69 @@ impl Deserialize for TransferResponse {
     const SIZE: Size = Size::Dynamic {
         header_size: 6,
         total_size: |header| {
-            if header.first().copied()? != IndicationBytes::TransferResponse as u8
-                || header.get(1).copied()? != IndicationBytes::HostName as u8
-            {
-                return None;
+            let indication = *header.first().ok_or(DecodeError::Truncated {
+                expected: 1,
+                actual: header.len(),
+            })?;
+            if indication != IndicationBytes::TransferResponse as u8 {
+                return Err(DecodeError::UnexpectedIndicationType {
+                    expected: IndicationBytes::TransferResponse,
+                    actual: indication,
+                });
             }
-
-            let host_len = u32::from_be_bytes(header.get(2..6)?.try_into().ok()?) as usize;
-            Some(7 + host_len)
+            let host_indication = *header.get(1).ok_or(DecodeError::Truncated {
+                expected: 2,
+                actual: header.len(),
+            })?;
+            if host_indication != IndicationBytes::HostName as u8 {
+                return Err(DecodeError::UnexpectedIndicationType {
+                    expected: IndicationBytes::HostName,
+                    actual: host_indication,
+                });
+            }
+            let len_bytes = header.get(2..6).ok_or(DecodeError::Truncated {
+                expected: 6,
+                actual: header.len(),
+            })?;
+            let host_len = u32::from_be_bytes(len_bytes.try_into().expect("2..6 is exactly 4 bytes")) as usize;
+            Ok(7 + host_len)
         },
     };
 
-    fn deserialize(data: &[u8]) -> Option<Self> {
-        if data.first().copied()? != IndicationBytes::TransferResponse as u8 {
-            return None;
+    fn deserialize(data: &[u8]) -> Result<Self, DecodeError> {
+        let indication = *data.first().ok_or(DecodeError::Truncated {
+            expected: 1,
+            actual: data.len(),
+        })?;
+        if indication != IndicationBytes::TransferResponse as u8 {
+            return Err(DecodeError::UnexpectedIndicationType {
+                expected: IndicationBytes::TransferResponse,
+                actual: indication,
+            });
         }
-        let host_len = u32::from_be_bytes(data.get(2..6)?.try_into().ok()?) as usize;
+        let len_bytes = data.get(2..6).ok_or(DecodeError::Truncated {
+            expected: 6,
+            actual: data.len(),
+        })?;
+        let host_len = u32::from_be_bytes(len_bytes.try_into().expect("2..6 is exactly 4 bytes")) as usize;
         let host_end = 6 + host_len;
-        let host = Host::deserialize(data.get(1..host_end)?)?;
-        let decision = TransferDesision::deserialize(data.get(host_end..host_end + 1)?)?;
+        let host_bytes = data.get(1..host_end).ok_or(DecodeError::InvalidLen {
+            declared: host_len,
+            available: data.len().saturating_sub(6),
+        })?;
+        let host = Host::deserialize(host_bytes)?;
+        let decision_bytes = data.get(host_end..host_end + 1).ok_or(DecodeError::Truncated {
+            expected: host_end + 1,
+            actual: data.len(),
+        })?;
+        let decision = TransferDesision::deserialize(decision_bytes)?;
 
-        Some(Self { host, decision })
+        Ok(Self { host, decision })
     }
 }
 
 impl Message {
-    pub async fn receive<T: Deserialize>(connection: &mut impl Recieve) -> io::Result<Option<T::Output>> {
+    pub async fn receive<T: Deserialize>(connection: &mut impl Recieve) -> io::Result<T::Output> {
         let data = match T::SIZE {
             Size::Fixed(size) => {
                 let mut data = vec![0; size];
@@ -129,9 +169,7 @@ impl Message {
                 let mut data = vec![0; header_size];
                 connection.recieve(&mut data).await?;
 
-                let Some(total) = total_size(&data) else {
-                    return Ok(None);
-                };
+                let total = total_size(&data).map_err(invalid_data)?;
 
                 data.resize(total, 0);
                 connection.recieve(&mut data[header_size..]).await?;
@@ -140,13 +178,13 @@ impl Message {
             },
         };
 
-        Ok(T::deserialize(&data))
+        T::deserialize(&data).map_err(invalid_data)
     }
 
     pub async fn receive_signed<T: Deserialize>(
         connection: &mut impl Recieve,
         identity_context: &IdentityContext,
-    ) -> io::Result<Option<T::Output>> {
+    ) -> io::Result<T::Output> {
         let data = match T::SIZE {
             Size::Fixed(size) => {
                 let mut data = vec![0; size + SIGNATURE_ADDED_SIZE];
@@ -158,9 +196,7 @@ impl Message {
                 let mut data = vec![0; header_size];
                 connection.recieve(&mut data).await?;
 
-                let Some(total) = total_size(&data) else {
-                    return Ok(None);
-                };
+                let total = total_size(&data).map_err(invalid_data)?;
 
                 data.resize(total + SIGNATURE_ADDED_SIZE, 0);
                 connection.recieve(&mut data[header_size..]).await?;
@@ -171,8 +207,12 @@ impl Message {
 
         let data = identity_context.check_signature(&data)?;
 
-        Ok(T::deserialize(data))
+        T::deserialize(data).map_err(invalid_data)
     }
+}
+
+fn invalid_data(error: DecodeError) -> io::Error {
+    io::Error::new(io::ErrorKind::InvalidData, error)
 }
 
 impl Serialize for SocketAddr {
@@ -202,15 +242,16 @@ impl Serialize for SocketAddr {
     }
 }
 
-
 impl Deserialize for SocketAddr {
     type Output = Self;
     const SIZE: Size = Size::Fixed(20);
 
-    fn deserialize(data: &[u8]) -> Option<Self> {
+    fn deserialize(data: &[u8]) -> Result<Self, DecodeError> {
         if data.len() != 20 {
-            dbg!("deserialize socket addr is in wrong place");
-            return None;
+            return Err(DecodeError::Truncated {
+                expected: 20,
+                actual: data.len(),
+            });
         }
 
         let ip = data[1];
@@ -221,7 +262,7 @@ impl Deserialize for SocketAddr {
                 let ip = Ipv4Addr::new(data[2], data[3], data[4], data[5]);
                 let port = u16::from_be_bytes([data[6], data[7]]);
 
-                Some(SocketAddr::V4(SocketAddrV4::new(ip, port)))
+                Ok(SocketAddr::V4(SocketAddrV4::new(ip, port)))
             },
             6 => {
                 //ipv6
@@ -230,9 +271,9 @@ impl Deserialize for SocketAddr {
                 let port = u16::from_be_bytes([data[18], data[19]]);
                 let ip = Ipv6Addr::from_octets(ip);
 
-                Some(SocketAddr::V6(SocketAddrV6::new(ip, port, 0, 0)))
+                Ok(SocketAddr::V6(SocketAddrV6::new(ip, port, 0, 0)))
             },
-            _ => None,
+            _ => Err(DecodeError::InvalidValue("unsupported IP version")),
         }
     }
 }

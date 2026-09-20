@@ -1,7 +1,9 @@
 //! Encryption key generation and  exchane operations
-//! 
+//!
 //! this module provides the main helpers and abstracions for ecription key creation Deserialization and Serialization
 //! the main structs are [`Secret`] and [`KeyPair`]
+use std::ops::Deref;
+
 use ml_kem::{
     Decapsulate, Encapsulate, Kem, KeyExport, MlKem1024, TryKeyInit,
     kem::SharedKey,
@@ -10,7 +12,7 @@ use ml_kem::{
 use zeroize::{Zeroize, Zeroizing};
 
 use crate::discovery::connection::{
-    Deserialize,
+    DecodeError, Deserialize,
     IndicationBytes::{self},
     Serialize, Size,
 };
@@ -31,6 +33,10 @@ impl Secret {
             ciphertxt,
         }
     }
+    ///Dangerous function use it as less ad possible
+    pub fn secret(&self) -> &SharedKey<MlKem1024> {
+        self.secret.deref()
+    }
 }
 
 impl Serialize for Secret {
@@ -45,14 +51,24 @@ const CIPHERTXT_SIZE: usize = 1568;
 impl Deserialize for Ciphertext {
     type Output = Self;
     const SIZE: Size = Size::Fixed(1 + CIPHERTXT_SIZE);
-    fn deserialize(data: &[u8]) -> Option<Self> {
-        if *data.first()? != IndicationBytes::Ciphertxt as u8 {
-            return None;
+    fn deserialize(data: &[u8]) -> Result<Self, DecodeError> {
+        let indication = *data.first().ok_or(DecodeError::Truncated {
+            expected: 1,
+            actual: data.len(),
+        })?;
+        if indication != IndicationBytes::Ciphertxt as u8 {
+            return Err(DecodeError::UnexpectedIndicationType {
+                expected: IndicationBytes::Ciphertxt,
+                actual: indication,
+            });
         }
 
-        let cipher = data.get(1..=CIPHERTXT_SIZE)?;
+        let cipher = data.get(1..=CIPHERTXT_SIZE).ok_or(DecodeError::Truncated {
+            expected: 1 + CIPHERTXT_SIZE,
+            actual: data.len(),
+        })?;
 
-        Ciphertext::try_from(cipher).ok()
+        Ciphertext::try_from(cipher).map_err(|_| DecodeError::InvalidValue("invalid ML-KEM ciphertext"))
     }
 }
 
@@ -122,15 +138,26 @@ impl Deserialize for EncapsulationKey {
     //size of indication byte (u8) + the actual key size
     const SIZE: Size = Size::Fixed(1 + ML_KEN_PUB_1024_SIZE);
     ///creates [`EncapsulationKey`] based on the recieved public_key
-    fn deserialize(data: &[u8]) -> Option<Self> {
-        if *data.first()? != IndicationBytes::PubKeySend as u8 {
-            return None;
+    fn deserialize(data: &[u8]) -> Result<Self, DecodeError> {
+        let indication = *data.first().ok_or(DecodeError::Truncated {
+            expected: 1,
+            actual: data.len(),
+        })?;
+        if indication != IndicationBytes::PubKeySend as u8 {
+            return Err(DecodeError::UnexpectedIndicationType {
+                expected: IndicationBytes::PubKeySend,
+                actual: indication,
+            });
         }
 
-        let recieved_public_key = data.get(1..=ML_KEN_PUB_1024_SIZE)?;
-        let recieved_public_key = EncapsulationKey::new_from_slice(recieved_public_key).ok()?;
+        let recieved_public_key = data.get(1..=ML_KEN_PUB_1024_SIZE).ok_or(DecodeError::Truncated {
+            expected: 1 + ML_KEN_PUB_1024_SIZE,
+            actual: data.len(),
+        })?;
+        let recieved_public_key = EncapsulationKey::new_from_slice(recieved_public_key)
+            .map_err(|_| DecodeError::InvalidValue("invalid ML-KEM encapsulation key"))?;
 
-        Some(recieved_public_key)
+        Ok(recieved_public_key)
     }
 }
 
@@ -169,6 +196,6 @@ mod test {
 
     #[test]
     fn public_key_deserialization_rejects_empty_input() {
-        assert!(EncapsulationKey::deserialize(&[]).is_none());
+        assert!(EncapsulationKey::deserialize(&[]).is_err());
     }
 }

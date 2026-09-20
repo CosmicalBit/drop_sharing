@@ -1,7 +1,6 @@
 //! [`Connection`] defines a connection typses and struct connection.
 //! Its all network + generalize protocol definitions, sutch as indication bytes.
-//! Everything thing that is consistent over the protocol and applies over or is related too [`Connection`] 
-//! 
+//! Everything thing that is consistent over the protocol and applies over or is related too [`Connection`]
 
 use std::{
     io::{self},
@@ -16,9 +15,9 @@ use tokio::{
 
 use crate::identity::identity_definition::IdentityContext;
 
-
 ///Indication bytes is is used in tcp and udp connections to identify what we are reading
 #[repr(u8)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum IndicationBytes {
     MagicInit = 1,
     HostInfo = 2,
@@ -27,15 +26,6 @@ pub enum IndicationBytes {
     PubKeySend = 5,
     Ciphertxt = 6,
     PublicIdentKey,
-}
-
-impl From<u8> for IndicationBytes {
-    fn from(value: u8) -> Self {
-        match value {
-            0x01 => Self::MagicInit,
-            _ => todo!(),
-        }
-    }
 }
 
 pub struct Tcp {
@@ -160,29 +150,74 @@ pub enum Size {
     Fixed(usize),
     Dynamic {
         header_size: usize,
-        total_size: fn(&[u8]) -> Option<usize>,
+        total_size: fn(&[u8]) -> Result<usize, DecodeError>,
     },
+}
+
+#[derive(Debug)]
+pub enum DecodeError {
+    Truncated { expected: usize, actual: usize },
+    UnexpectedIndicationType { expected: IndicationBytes, actual: u8 },
+    InvalidUtf8(std::str::Utf8Error),
+    InvalidLen { declared: usize, available: usize },
+    InvalidValue(&'static str),
+}
+impl From<std::str::Utf8Error> for DecodeError {
+    fn from(value: std::str::Utf8Error) -> Self {
+        DecodeError::InvalidUtf8(value)
+    }
+}
+
+impl std::fmt::Display for DecodeError {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Truncated { expected, actual } => {
+                write!(formatter, "truncated message: expected at least {expected} bytes, got {actual}")
+            },
+            Self::UnexpectedIndicationType { expected, actual } => {
+                write!(formatter, "unexpected indication byte: expected {}, got {actual}", *expected as u8)
+            },
+            Self::InvalidUtf8(error) => error.fmt(formatter),
+            Self::InvalidLen { declared, available } => {
+                write!(
+                    formatter,
+                    "invalid declared length {declared}; only {available} bytes are available"
+                )
+            },
+            Self::InvalidValue(message) => formatter.write_str(message),
+        }
+    }
+}
+
+impl std::error::Error for DecodeError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self {
+            Self::InvalidUtf8(error) => Some(error),
+            _ => None,
+        }
+    }
 }
 
 ///[`Deserialize`] is a trait used by everything that can be sent over the network
 /// it converts the wanted data to bytes
 /// it specifies [`Size`] which specifies if the data size is fixed or no
-/// 
+///
 /// in fixed messages [`Size::Fixed`] contains the total size of the message including [`IndicationBytes`]
-/// 
+///
 /// in case that its not fixed you use the [`Size::Dynamic`] that contains the header size
 /// and a fucntion that determines the full message size from tat header
-/// 
-/// [`Output`](Deserialize::Output) is the type returned gy deserialization, it normally is `Selfl` but sometimes it may be different
-/// bcs we might not want to constuct the original object. Ex: it might be unsafe bcs the whole object was not sendt over network, for exemple private keys arent sent
+///
+/// [`Output`](Deserialize::Output) is the type returned gy deserialization, it normally is `Selfl` but sometimes it may
+/// be different bcs we might not want to constuct the original object. Ex: it might be unsafe bcs the whole object was
+/// not sendt over network, for exemple private keys arent sent
 pub trait Deserialize: Sized {
     const SIZE: Size;
     type Output;
-    fn deserialize(data: &[u8]) -> Option<Self::Output>;
+    fn deserialize(data: &[u8]) -> Result<Self::Output, DecodeError>;
 }
 
-///the trait [`Recieve`] just specifies the recieve func signature to make make consistent over [`Connection<Mode>`] 
-/// that can be [`Tcp`] or [`Udp`] 
+///the trait [`Recieve`] just specifies the recieve func signature to make make consistent over [`Connection<Mode>`]
+/// that can be [`Tcp`] or [`Udp`]
 pub trait Recieve {
     async fn recieve(&mut self, buffer: &mut [u8]) -> io::Result<()>;
 }

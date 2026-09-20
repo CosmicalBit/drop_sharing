@@ -1,6 +1,4 @@
 //! defines the main fucntion for encrytion key exchange on the sender side
-use std::io::ErrorKind;
-
 use ml_kem::ml_kem_1024::Ciphertext;
 use tokio::io;
 
@@ -22,9 +20,7 @@ pub(crate) async fn init_sender_key_exchange(
 
     tcp_conn.send_n_sign(&serial, identity_context).await?;
 
-    let cyphertxt = Message::receive_signed::<Ciphertext>(tcp_conn, identity_context)
-        .await?
-        .ok_or_else(|| io::Error::new(ErrorKind::InvalidData, "invalid ciphertext"))?;
+    let cyphertxt = Message::receive_signed::<Ciphertext>(tcp_conn, identity_context).await?;
 
     Ok(sender_key_pair.construct_secret_from_keypair_n_cipher(cyphertxt))
 }

@@ -5,9 +5,7 @@ use crate::{
     arguments::{
         Cli,
         Command::{StartReceiver, StartSender},
-    },
-    discovery::{receiver::init::init_receiver, sender::init::sender_init},
-    file_collection::tree_walking::{FileCount, walk},
+    }, discovery::{receiver::init::init_receiver, sender::init::sender_init}, encryption::{cipher::Cipher, key_agreement::sender::keygen::Secret}, file_collection::tree_walking::{FileCount, walk},
 };
 
 mod arguments;
@@ -26,10 +24,12 @@ async fn main() -> io::Result<()> {
 
             walk(&start_args.directory, &mut counter)?;
 
-            sender_init(counter.count() as u32).await?;
+            let secret = sender_init(counter.count() as u32).await?;
         },
         StartReceiver => {
-            init_receiver().await?;
+            let secret = init_receiver().await?;
+            
+            let cipher = Cipher::try_from(secret)?; 
         },
     }
 

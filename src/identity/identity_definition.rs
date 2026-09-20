@@ -7,7 +7,7 @@ use ml_dsa::{Generate, KeyExport, KeyInit, Keypair, MlDsa87, Signature, Signer, 
 use tokio::io;
 
 use crate::discovery::{
-    connection::{Deserialize, IndicationBytes, Serialize, Size},
+    connection::{DecodeError, Deserialize, IndicationBytes, Serialize, Size},
     udp_logic::DiscoveryMessage,
 };
 
@@ -55,13 +55,23 @@ impl Deserialize for Identification {
     type Output = PubKey;
     const SIZE: Size = Size::Fixed(1 + PUBLIC_KEY_SIZE);
     ///reads the public key of the other device
-    fn deserialize(data: &[u8]) -> Option<Self::Output> {
-        if *data.first()? != IndicationBytes::PublicIdentKey as u8 {
-            return None;
+    fn deserialize(data: &[u8]) -> Result<Self::Output, DecodeError> {
+        let indication = *data.first().ok_or(DecodeError::Truncated {
+            expected: 1,
+            actual: data.len(),
+        })?;
+        if indication != IndicationBytes::PublicIdentKey as u8 {
+            return Err(DecodeError::UnexpectedIndicationType {
+                expected: IndicationBytes::PublicIdentKey,
+                actual: indication,
+            });
         }
 
-        let verifiyingk = data.get(1..=PUBLIC_KEY_SIZE)?;
-        VerifyingKey::<MlDsa87>::new_from_slice(verifiyingk).ok()
+        let verifying_key = data.get(1..=PUBLIC_KEY_SIZE).ok_or(DecodeError::Truncated {
+            expected: 1 + PUBLIC_KEY_SIZE,
+            actual: data.len(),
+        })?;
+        VerifyingKey::<MlDsa87>::new_from_slice(verifying_key).map_err(|_| DecodeError::InvalidValue("invalid ML-DSA public key"))
     }
 }
 

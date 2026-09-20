@@ -1,6 +1,4 @@
 //! defines the main fucntion for encrytion key exchange on the reciever side
-use std::io::ErrorKind;
-
 use ml_kem::ml_kem_1024::EncapsulationKey;
 use tokio::io;
 
@@ -16,9 +14,7 @@ pub(crate) async fn init_reciever_key_exchange(
     tcp_conn: &mut (impl Recieve + SendSign),
     identity_context: &IdentityContext,
 ) -> io::Result<Secret> {
-    let encapsulation_key = Message::receive_signed::<EncapsulationKey>(tcp_conn, identity_context)
-        .await?
-        .ok_or_else(|| io::Error::new(ErrorKind::InvalidData, "invalid encapsulation key"))?;
+    let encapsulation_key = Message::receive_signed::<EncapsulationKey>(tcp_conn, identity_context).await?;
 
     let secret = Secret::from(encapsulation_key);
     let serialized_secret = secret.serialize();

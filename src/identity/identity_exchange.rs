@@ -16,14 +16,10 @@ pub async fn key_exchange(tcp: &mut (impl Send + Recieve), my_identification: Id
     //send sender ident
     tcp.send(&my_identification.serialize()).await?;
 
-    let pubkey = Message::receive::<Identification>(tcp)
-        .await?
-        .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidData, "invalid identification msg"))?;
+    let pubkey = Message::receive::<Identification>(tcp).await?;
 
     Ok(IdentityContext::new(my_identification, pubkey))
 }
-
-
 
 #[cfg(test)]
 mod tests {
