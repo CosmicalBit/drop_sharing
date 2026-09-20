@@ -30,7 +30,7 @@ impl Host {
 }
 
 impl Serialize for Host {
-    fn serialize(&self) -> Vec<u8> {
+    fn serialize(&self) -> Box<[u8]> {
         let bytes = self.name.as_bytes();
         let len = bytes.len() as u32;
 
@@ -38,7 +38,8 @@ impl Serialize for Host {
         vec.push(IndicationBytes::HostName as u8);
         vec.extend_from_slice(&len.to_be_bytes());
         vec.extend_from_slice(bytes);
-        vec
+
+        vec.into_boxed_slice()
     }
 }
 
@@ -128,7 +129,7 @@ impl HostInfo {
 }
 
 impl Serialize for HostInfo {
-    fn serialize(&self) -> Vec<u8> {
+    fn serialize(&self) -> Box<[u8]> {
         let name = &self.host.serialize();
         let len = name.len() as u32;
         let num_file_as_bytes = self.num_of_files.to_be_bytes();
@@ -141,7 +142,7 @@ impl Serialize for HostInfo {
         vec.extend_from_slice(name);
         vec.extend_from_slice(&self.num_of_files.to_be_bytes());
 
-        vec
+        vec.into_boxed_slice()
     }
 }
 

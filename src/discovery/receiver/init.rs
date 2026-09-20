@@ -14,7 +14,7 @@ use crate::{
     identity::{identity_definition::Identification, identity_exchange::key_exchange},
 };
 
-pub async fn init_receiver() -> io::Result<Secret> {
+pub async fn init_receiver() -> io::Result<(Secret, Connection<Tcp>, usize)> {
     let identification = Identification::new();
     let mut udp = Connection::<Udp>::new_listen().await?;
 
@@ -33,6 +33,7 @@ pub async fn init_receiver() -> io::Result<Secret> {
     let host = Message::receive::<HostInfo>(&mut tcp_connection).await?;
 
     //confirm if user wants to reciecve data
+    let file_count = host.file_num();
     confirm_connection(host, &mut tcp_connection).await?;
 
     //exchange keys
@@ -43,7 +44,7 @@ pub async fn init_receiver() -> io::Result<Secret> {
 
     let secret = init_reciever_key_exchange(&mut tcp_connection, &identity_context).await?;
 
-    Ok(secret)
+    Ok((secret, tcp_connection, file_count))
 }
 
 async fn confirm_connection(hostinfo: HostInfo, connection: &mut Connection<Tcp>) -> io::Result<()> {

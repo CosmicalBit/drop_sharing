@@ -1,13 +1,19 @@
-use blake3::derive_key;
-use chacha20poly1305::{ChaCha20Poly1305, ChaChaPoly1305, Nonce, aead::Aead};
+use chacha20poly1305::{
+    ChaCha20Poly1305, ChaChaPoly1305, Nonce,
+    aead::{Aead, Payload},
+};
 use ml_dsa::{Generate, KeyInit};
 use tokio::io;
 
-use crate::encryption::key_agreement::sender::keygen::Secret;
+use crate::{
+    discovery::connection::Serialize, encryption::key_agreement::sender::keygen::Secret, file_collection::tree_walking::FileHeader,
+};
 
+#[derive(Debug)]
 pub enum TransferError {
     Io(io::Error),
     Encrytion(chacha20poly1305::Error),
+    InvalidChunkSize,
 }
 
 impl From<io::Error> for TransferError {
@@ -35,13 +41,38 @@ impl TryFrom<Secret> for Cipher {
     }
 }
 
+///when reading read buffer size + 16
 impl Cipher {
-    pub fn encrypt(&self, data: &[u8]) -> Result<(), TransferError> {
-        let nounce = Nonce::generate();
+    ///returns serialized header plus the encrypted contents with the nonce at the end
+    pub fn encrypt_with_header(&self, buf: &[u8], header: &FileHeader) -> Result<(Box<[u8]>, Box<[u8]>), TransferError> {
+        let header = header.serialize();
+        let nonce = Nonce::generate();
 
-        let encrypted = self.encryption_key.encrypt(&nounce, data)?;
+        let payload = Payload { msg: buf, aad: &header };
 
-        //TODO continue here and see if we want AED (aditional encrypted data)
-        Ok(())
+        let mut encrypted = self.encryption_key.encrypt(&nonce, payload)?;
+        encrypted.extend_from_slice(nonce.as_slice());
+
+        Ok((header, encrypted.into_boxed_slice()))
+    }
+    pub fn encrypt(&self, buf: &[u8]) -> Result<Box<[u8]>, TransferError> {
+        let nonce = Nonce::generate();
+
+        let mut encrypted = self.encryption_key.encrypt(&nonce, buf)?;
+        encrypted.extend_from_slice(nonce.as_slice());
+
+        Ok(encrypted.into_boxed_slice())
+    }
+
+    pub fn decrypt(&self, encrypted: &[u8], aad: &[u8]) -> Result<Box<[u8]>, TransferError> {
+        const NONCE_SIZE: usize = 12;
+
+        let nonce_offset = encrypted.len().checked_sub(NONCE_SIZE).ok_or(TransferError::InvalidChunkSize)?;
+        let (ciphertext, nonce_bytes) = encrypted.split_at(nonce_offset);
+        let nonce = Nonce::try_from(nonce_bytes).map_err(|_| TransferError::InvalidChunkSize)?;
+        let payload = Payload { msg: ciphertext, aad };
+        let decrypted = self.encryption_key.decrypt(&nonce, payload)?;
+
+        Ok(decrypted.into_boxed_slice())
     }
 }

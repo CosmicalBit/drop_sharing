@@ -12,7 +12,7 @@ use crate::{
     identity::{identity_definition::Identification, identity_exchange::key_exchange},
 };
 
-pub async fn sender_init(num_of_files: u32) -> io::Result<Secret> {
+pub async fn sender_init(num_of_files: u32) -> io::Result<(Secret,Connection<Tcp>)> {
     let (_tcp_connection, my_socket_addr) = Connection::<Tcp>::new_listen().await?;
 
     let identification = Identification::new();
@@ -34,5 +34,6 @@ pub async fn sender_init(num_of_files: u32) -> io::Result<Secret> {
     //start ident exchange
     let identity_context = key_exchange(&mut tcp_connection, identification).await?;
     let secret = init_sender_key_exchange(&mut tcp_connection, &identity_context).await?;
-    Ok(secret)
+
+    Ok((secret,tcp_connection))
 }

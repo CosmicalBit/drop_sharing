@@ -25,7 +25,8 @@ pub enum IndicationBytes {
     HostName = 4,
     PubKeySend = 5,
     Ciphertxt = 6,
-    PublicIdentKey,
+    PublicIdentKey = 7,
+    File = 8,
 }
 
 pub struct Tcp {
@@ -143,7 +144,7 @@ impl Recieve for Connection<Udp> {
     }
 }
 pub trait Serialize {
-    fn serialize(&self) -> Vec<u8>;
+    fn serialize(&self) -> Box<[u8]>;
 }
 
 pub enum Size {

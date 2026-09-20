@@ -1,7 +1,6 @@
 //! device identity and message identification
 //!
 //! the module provides the implementation for local device cryptographic identity
-use std::hash::Hash;
 
 use ml_dsa::{Generate, KeyExport, KeyInit, Keypair, MlDsa87, Signature, Signer, SigningKey, Verifier, VerifyingKey};
 use tokio::io;
@@ -36,18 +35,18 @@ impl Identification {
 }
 
 impl Serialize for Identification {
-    fn serialize(&self) -> Vec<u8> {
+    fn serialize(&self) -> Box<[u8]> {
         self.public_key.serialize()
     }
 }
 impl Serialize for VerifyingKey<MlDsa87> {
-    fn serialize(&self) -> Vec<u8> {
+    fn serialize(&self) -> Box<[u8]> {
         let mut vec = Vec::new();
 
         vec.push(IndicationBytes::PublicIdentKey as u8);
         vec.extend_from_slice(&self.to_bytes());
 
-        vec
+        vec.into_boxed_slice()
     }
 }
 

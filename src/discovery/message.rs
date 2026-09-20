@@ -33,8 +33,8 @@ pub enum TransferDesision {
 }
 
 impl Serialize for TransferDesision {
-    fn serialize(&self) -> Vec<u8> {
-        vec![self.clone() as u8]
+    fn serialize(&self) -> Box<[u8]> {
+        vec![self.clone() as u8].into_boxed_slice()
     }
 }
 
@@ -62,13 +62,14 @@ impl TransferResponse {
 }
 
 impl Serialize for TransferResponse {
-    fn serialize(&self) -> Vec<u8> {
+    fn serialize(&self) -> Box<[u8]> {
         let mut vec = Vec::new();
 
         vec.push(IndicationBytes::TransferResponse as u8);
         vec.extend_from_slice(&self.host.serialize());
         vec.extend_from_slice(&self.decision.serialize());
-        vec
+
+        vec.into_boxed_slice()
     }
 }
 impl Deserialize for TransferDesision {
@@ -216,7 +217,7 @@ fn invalid_data(error: DecodeError) -> io::Error {
 }
 
 impl Serialize for SocketAddr {
-    fn serialize(&self) -> Vec<u8> {
+    fn serialize(&self) -> Box<[u8]> {
         match self {
             SocketAddr::V4(addr) => {
                 let mut out = Vec::with_capacity(20);
@@ -227,7 +228,7 @@ impl Serialize for SocketAddr {
                 out.extend_from_slice(&addr.port().to_be_bytes());
                 out.extend_from_slice(&[0u8; 12]);
 
-                out
+                out.into_boxed_slice()
             },
             SocketAddr::V6(addr) => {
                 let mut out = Vec::with_capacity(20);
@@ -236,7 +237,7 @@ impl Serialize for SocketAddr {
                 out.push(6); // ipv6
                 out.extend_from_slice(&addr.ip().octets());
                 out.extend_from_slice(&addr.port().to_be_bytes());
-                out
+                out.into_boxed_slice()
             },
         }
     }

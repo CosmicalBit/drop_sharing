@@ -30,14 +30,14 @@ impl DiscoveryMessage {
 }
 
 impl Serialize for DiscoveryMessage {
-    fn serialize(&self) -> Vec<u8> {
+    fn serialize(&self) -> Box<[u8]> {
         let mut vec = Vec::new();
 
         vec.push(IndicationBytes::MagicInit as u8);
         vec.extend_from_slice(&self.socket.serialize());
         vec.extend_from_slice(self.finger_print.as_bytes());
 
-        vec
+        vec.into_boxed_slice()
     }
 }
 
