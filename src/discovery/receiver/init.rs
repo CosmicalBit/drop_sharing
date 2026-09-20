@@ -18,13 +18,17 @@ pub async fn init_receiver() -> io::Result<(Secret, Connection<Tcp>, usize)> {
     let identification = Identification::new();
     let mut udp = Connection::<Udp>::new_listen().await?;
 
-    let discoverer_msg = loop {
+    let mut discoverer_msg = loop {
         match Message::receive::<DiscoveryMessage>(&mut udp).await {
             Ok(message) => break message,
             Err(error) if error.kind() == io::ErrorKind::InvalidData => continue,
             Err(error) => return Err(error),
         }
     };
+    let sender = udp
+        .last_sender()
+        .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidData, "couldnt get discovery sender"))?;
+    discoverer_msg.set_ip(sender.ip());
 
     //connect to it
     let mut tcp_connection = Connection::<Tcp>::new_send_n_listen(discoverer_msg.socket(), udp).await?;

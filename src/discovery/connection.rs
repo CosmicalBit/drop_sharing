@@ -39,10 +39,11 @@ impl Tcp {
 }
 pub struct Udp {
     stream: UdpSocket,
+    last_sender: Option<SocketAddr>,
 }
 impl Udp {
     pub fn new(stream: UdpSocket) -> Self {
-        Self { stream }
+        Self { stream, last_sender: None }
     }
 }
 
@@ -53,17 +54,11 @@ pub struct Connection<Mode> {
 }
 
 impl Connection<Tcp> {
-    pub async fn new_listen() -> io::Result<(Self, SocketAddr)> {
+    pub async fn new_listen() -> io::Result<(TcpListener, SocketAddr)> {
         let listener = TcpListener::bind("0.0.0.0:0").await?;
-
         let my_addr = listener.local_addr()?;
 
-        let (stream, _) = listener.accept().await?;
-
-        let tcp = Tcp::new(stream);
-        let connection = Connection { mode: tcp };
-
-        Ok((connection, my_addr))
+        Ok((listener, my_addr))
     }
     //it takes old connection just to make sure i dont accidentaly use it
     pub async fn new_send_n_listen(addr: SocketAddr, _old_connection: Connection<Udp>) -> io::Result<Self> {
@@ -71,10 +66,8 @@ impl Connection<Tcp> {
 
         Ok(Self { mode: Tcp::new(socket) })
     }
-    pub async fn new(addr: SocketAddr) -> io::Result<Self> {
-        let socket = TcpListener::bind(addr).await?;
-
-        let (stream, _sender) = socket.accept().await?;
+    pub async fn accept(listener: TcpListener) -> io::Result<Self> {
+        let (stream, _sender) = listener.accept().await?;
 
         Ok(Self { mode: Tcp::new(stream) })
     }
@@ -129,8 +122,13 @@ impl Connection<Udp> {
         broadcast.mode.stream.writable().await?;
 
         broadcast.mode.stream.send_to(data, "255.255.255.255:4242").await?;
+        broadcast.mode.stream.send_to(data, "127.0.0.1:4242").await?;
 
         Ok(())
+    }
+
+    pub fn last_sender(&self) -> Option<SocketAddr> {
+        self.mode.last_sender
     }
 }
 
@@ -138,7 +136,11 @@ impl Recieve for Connection<Udp> {
     async fn recieve(&mut self, buffer: &mut [u8]) -> io::Result<()> {
         self.mode.stream.readable().await?;
 
-        self.mode.stream.recv_from(buffer).await?;
+        let (len, sender) = self.mode.stream.recv_from(buffer).await?;
+        if len != buffer.len() {
+            return Err(io::Error::new(io::ErrorKind::UnexpectedEof, "incomplete UDP message"));
+        }
+        self.mode.last_sender = Some(sender);
 
         Ok(())
     }

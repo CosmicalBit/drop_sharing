@@ -1,4 +1,4 @@
-use std::net::SocketAddr;
+use std::net::{IpAddr, SocketAddr};
 
 use crate::{
     discovery::connection::{DecodeError, Deserialize, IndicationBytes, Serialize, Size},
@@ -27,6 +27,9 @@ impl DiscoveryMessage {
     pub fn figer_print(&self) -> blake3::Hash {
         self.finger_print
     }
+    pub fn set_ip(&mut self, ip: IpAddr) {
+        self.socket.set_ip(ip);
+    }
 }
 
 impl Serialize for DiscoveryMessage {
@@ -44,36 +47,7 @@ impl Serialize for DiscoveryMessage {
 impl Deserialize for DiscoveryMessage {
     type Output = Self;
 
-    const SIZE: Size = Size::Dynamic {
-        header_size: 3,
-        total_size: |header| {
-            let first = *header.first().ok_or(DecodeError::Truncated {
-                expected: 1,
-                actual: header.len(),
-            })?;
-            if first != IndicationBytes::MagicInit as u8 {
-                return Err(DecodeError::UnexpectedIndicationType {
-                    expected: IndicationBytes::MagicInit,
-                    actual: first,
-                });
-            }
-            let socket_indication = *header.get(1).ok_or(DecodeError::Truncated {
-                expected: 2,
-                actual: header.len(),
-            })?;
-            if socket_indication != IndicationBytes::MagicInit as u8 {
-                return Err(DecodeError::UnexpectedIndicationType {
-                    expected: IndicationBytes::MagicInit,
-                    actual: socket_indication,
-                });
-            }
-            if !matches!(header.get(2), Some(4 | 6)) {
-                return Err(DecodeError::InvalidValue("unsupported IP version"));
-            }
-
-            Ok(DISCOVERY_MESSAGE_SIZE)
-        },
-    };
+    const SIZE: Size = Size::Fixed(DISCOVERY_MESSAGE_SIZE);
 
     fn deserialize(data: &[u8]) -> Result<Self, DecodeError> {
         if data.len() < DISCOVERY_MESSAGE_SIZE {

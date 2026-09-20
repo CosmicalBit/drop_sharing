@@ -12,8 +12,8 @@ use crate::{
     identity::{identity_definition::Identification, identity_exchange::key_exchange},
 };
 
-pub async fn sender_init(num_of_files: u32) -> io::Result<(Secret,Connection<Tcp>)> {
-    let (_tcp_connection, my_socket_addr) = Connection::<Tcp>::new_listen().await?;
+pub async fn sender_init(num_of_files: u32) -> io::Result<(Secret, Connection<Tcp>)> {
+    let (listener, my_socket_addr) = Connection::<Tcp>::new_listen().await?;
 
     let identification = Identification::new();
 
@@ -21,7 +21,7 @@ pub async fn sender_init(num_of_files: u32) -> io::Result<(Secret,Connection<Tcp
     //send to udp
     Connection::<Udp>::start_broadcast_and_send(&msg.serialize()).await?;
 
-    let mut tcp_connection = Connection::<Tcp>::new(my_socket_addr).await?;
+    let mut tcp_connection = Connection::<Tcp>::accept(listener).await?;
 
     //send host
     let host = &HostInfo::new(num_of_files)?.serialize();
@@ -35,5 +35,5 @@ pub async fn sender_init(num_of_files: u32) -> io::Result<(Secret,Connection<Tcp
     let identity_context = key_exchange(&mut tcp_connection, identification).await?;
     let secret = init_sender_key_exchange(&mut tcp_connection, &identity_context).await?;
 
-    Ok((secret,tcp_connection))
+    Ok((secret, tcp_connection))
 }

@@ -159,6 +159,8 @@ impl Deserialize for TransferResponse {
 
 impl Message {
     pub async fn receive<T: Deserialize>(connection: &mut impl Recieve) -> io::Result<T::Output> {
+        const MAX_MESSAGE_SIZE: usize = 1024 * 1024;
+
         let data = match T::SIZE {
             Size::Fixed(size) => {
                 let mut data = vec![0; size];
@@ -171,6 +173,9 @@ impl Message {
                 connection.recieve(&mut data).await?;
 
                 let total = total_size(&data).map_err(invalid_data)?;
+                if total > MAX_MESSAGE_SIZE {
+                    return Err(io::Error::new(io::ErrorKind::InvalidData, "message is too large"));
+                }
 
                 data.resize(total, 0);
                 connection.recieve(&mut data[header_size..]).await?;
@@ -186,6 +191,8 @@ impl Message {
         connection: &mut impl Recieve,
         identity_context: &IdentityContext,
     ) -> io::Result<T::Output> {
+        const MAX_MESSAGE_SIZE: usize = 1024 * 1024;
+
         let data = match T::SIZE {
             Size::Fixed(size) => {
                 let mut data = vec![0; size + SIGNATURE_ADDED_SIZE];
@@ -198,6 +205,9 @@ impl Message {
                 connection.recieve(&mut data).await?;
 
                 let total = total_size(&data).map_err(invalid_data)?;
+                if total > MAX_MESSAGE_SIZE {
+                    return Err(io::Error::new(io::ErrorKind::InvalidData, "message is too large"));
+                }
 
                 data.resize(total + SIGNATURE_ADDED_SIZE, 0);
                 connection.recieve(&mut data[header_size..]).await?;

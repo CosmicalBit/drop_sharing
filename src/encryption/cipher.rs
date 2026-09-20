@@ -5,15 +5,32 @@ use chacha20poly1305::{
 use ml_dsa::{Generate, KeyInit};
 use tokio::io;
 
-use crate::{
-    discovery::connection::Serialize, encryption::key_agreement::sender::keygen::Secret, file_collection::tree_walking::FileHeader,
-};
+use crate::encryption::key_agreement::sender::keygen::Secret;
 
 #[derive(Debug)]
 pub enum TransferError {
     Io(io::Error),
-    Encrytion(chacha20poly1305::Error),
+    Encryption(chacha20poly1305::Error),
     InvalidChunkSize,
+}
+
+impl std::fmt::Display for TransferError {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Io(error) => error.fmt(formatter),
+            Self::Encryption(error) => write!(formatter, "encryption error: {error}"),
+            Self::InvalidChunkSize => formatter.write_str("invalid chunk size"),
+        }
+    }
+}
+
+impl std::error::Error for TransferError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self {
+            Self::Io(error) => Some(error),
+            _ => None,
+        }
+    }
 }
 
 impl From<io::Error> for TransferError {
@@ -23,7 +40,7 @@ impl From<io::Error> for TransferError {
 }
 impl From<chacha20poly1305::Error> for TransferError {
     fn from(value: chacha20poly1305::Error) -> Self {
-        TransferError::Encrytion(value)
+        TransferError::Encryption(value)
     }
 }
 
@@ -43,22 +60,12 @@ impl TryFrom<Secret> for Cipher {
 
 ///when reading read buffer size + 16
 impl Cipher {
-    ///returns serialized header plus the encrypted contents with the nonce at the end
-    pub fn encrypt_with_header(&self, buf: &[u8], header: &FileHeader) -> Result<(Box<[u8]>, Box<[u8]>), TransferError> {
-        let header = header.serialize();
+    pub fn encrypt(&self, buf: &[u8], aad: &[u8]) -> Result<Box<[u8]>, TransferError> {
         let nonce = Nonce::generate();
 
-        let payload = Payload { msg: buf, aad: &header };
+        let payload = Payload { msg: buf, aad };
 
         let mut encrypted = self.encryption_key.encrypt(&nonce, payload)?;
-        encrypted.extend_from_slice(nonce.as_slice());
-
-        Ok((header, encrypted.into_boxed_slice()))
-    }
-    pub fn encrypt(&self, buf: &[u8]) -> Result<Box<[u8]>, TransferError> {
-        let nonce = Nonce::generate();
-
-        let mut encrypted = self.encryption_key.encrypt(&nonce, buf)?;
         encrypted.extend_from_slice(nonce.as_slice());
 
         Ok(encrypted.into_boxed_slice())
