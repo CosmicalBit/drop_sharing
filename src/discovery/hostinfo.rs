@@ -213,8 +213,62 @@ impl Deserialize for HostInfo {
 
 #[cfg(test)]
 mod test {
+    use std::{ffi::OsStr, os::unix::ffi::OsStrExt};
+
+    use proptest::prelude::*;
+
     use super::*;
 
+    impl Host {
+        fn new_raw(bytes: &[u8]) -> io::Result<Host> {
+            let name = OsStr::from_bytes(bytes);
+
+            let name = name
+                .to_str()
+                .ok_or_else(|| Error::new(std::io::ErrorKind::InvalidFilename, "non utf8 hostname"))?
+                .to_string();
+
+            Ok(Host { name })
+        }
+    }
+    impl HostInfo {
+        fn new_raw(name_bytes: &[u8], num_of_files: u32) -> io::Result<HostInfo> {
+            Ok(HostInfo {
+                num_of_files,
+                host: Host::new_raw(name_bytes)?,
+            })
+        }
+    }
+
+    #[test]
+    fn fuzz_host_info() {
+        bolero::check!().with_type::<(Vec<u8>, u32)>().for_each(|(name, num_of_files)| {
+            let Ok(host_info) = HostInfo::new_raw(name, *num_of_files) else {
+                return;
+            };
+
+            let seri = host_info.serialize();
+            let deseri = HostInfo::deserialize(&seri).expect("it can never error if valid data");
+
+            assert_eq!(host_info, deseri);
+        })
+    }
+
+    fn host_info_strategy() -> impl Strategy<Value = HostInfo> {
+        ("[a-zA-Z0-9-{1,63]", any::<u32>()).prop_map(|(name, num_of_files)| HostInfo {
+            host: Host { name },
+            num_of_files,
+        })
+    }
+
+    proptest! {
+        #[test]
+        fn host_info_round_trip(host_info in host_info_strategy()){
+            let serialized = host_info.serialize();
+            let deserialized = HostInfo::deserialize(&serialized).unwrap();
+            prop_assert_eq!(host_info, deserialized);
+        }
+    }
     #[test]
     fn test_host_info_round_trip() {
         let host_info = HostInfo::new(4).unwrap();
