@@ -7,6 +7,7 @@ use tokio::io;
 
 use crate::discovery::connection::{DecodeError, Deserialize, IndicationBytes, Serialize, Size};
 
+const MAX_HOST_NAME_LEN: usize = 255;
 /// [`Host`] contains the computer host name
 #[derive(PartialEq, Eq, Debug, Clone)]
 pub struct Host {
@@ -29,7 +30,7 @@ impl Serialize for Host {
     fn serialize(&self) -> Box<[u8]> {
         let bytes = self.name.as_bytes();
         let len = bytes.len() as u32;
-
+        
         let mut vec = Vec::with_capacity(bytes.len() + 5);
         vec.push(IndicationBytes::HostName as u8);
         vec.extend_from_slice(&len.to_be_bytes());
@@ -165,6 +166,9 @@ impl Deserialize for HostInfo {
 
             let name_len = u32::from_be_bytes(len_bytes.try_into().expect("1..5 is 4 bytes")) as usize;
 
+            if name_len == 0 || name_len > MAX_HOST_NAME_LEN {
+                return Err(DecodeError::InvalidValue("invalid len"));
+            }
             //header + name + num_of_Files
             Ok(5 + name_len + 4)
         },
