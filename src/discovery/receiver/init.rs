@@ -144,9 +144,14 @@ pub async fn receive_once(mode: ConfirmMode) -> Result<(), TransferError> {
         return Ok(());
     };
 
-    let cipher = Cipher::try_from(secret)?;
+    tokio::spawn(async move {
+        let cipher = Cipher::try_from(secret)?;
 
-    collect_files(file_count, Path::new("received_files"), &cipher, &mut tcp).await?;
+        collect_files(file_count, Path::new("received_files"), &cipher, &mut tcp).await?;
+
+        Ok::<(), TransferError>(())
+    })
+    .await??;
 
     Ok(())
 }

@@ -3,7 +3,7 @@ use chacha20poly1305::{
     aead::{Aead, Payload},
 };
 use ml_dsa::{Generate, KeyInit};
-use tokio::io;
+use tokio::{io, task::JoinError};
 
 use crate::encryption::key_agreement::sender::keygen::Secret;
 
@@ -12,14 +12,21 @@ pub enum TransferError {
     Io(io::Error),
     Encryption(chacha20poly1305::Error),
     InvalidChunkSize,
+    AsyncFailed(JoinError),
 }
 
+impl From<JoinError> for TransferError {
+    fn from(value: JoinError) -> Self {
+        TransferError::AsyncFailed(value)
+    }
+}
 impl std::fmt::Display for TransferError {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::Io(error) => error.fmt(formatter),
             Self::Encryption(error) => write!(formatter, "encryption error: {error}"),
             Self::InvalidChunkSize => formatter.write_str("invalid chunk size"),
+            Self::AsyncFailed(error) => error.fmt(formatter),
         }
     }
 }
