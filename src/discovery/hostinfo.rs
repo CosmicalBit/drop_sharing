@@ -7,7 +7,7 @@ use tokio::io;
 
 use crate::discovery::connection::{DecodeError, Deserialize, IndicationBytes, Serialize, Size};
 
-const MAX_HOST_NAME_LEN: usize = 255;
+const MAX_HOST_NAME_LEN: usize = 256;
 /// [`Host`] contains the computer host name
 #[derive(PartialEq, Eq, Debug, Clone)]
 pub struct Host {
@@ -24,13 +24,16 @@ impl Host {
 
         Ok(Self { name })
     }
+    pub fn name(&self)->&str{
+        &self.name
+    }
 }
 
 impl Serialize for Host {
     fn serialize(&self) -> Box<[u8]> {
         let bytes = self.name.as_bytes();
         let len = bytes.len() as u32;
-        
+
         let mut vec = Vec::with_capacity(bytes.len() + 5);
         vec.push(IndicationBytes::HostName as u8);
         vec.extend_from_slice(&len.to_be_bytes());

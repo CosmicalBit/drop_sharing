@@ -1,8 +1,10 @@
 //! contains the init function for the reciever
 use std::io::stdin;
 
-use notify_rust::Notification;
+use notify_rust::{Notification, Timeout, Urgency};
 use tokio::io;
+
+pub const APP_NAME: &str = env!("CARGO_PKG_NAME");
 
 use crate::{
     Cipher, Path, collect_files,
@@ -112,8 +114,13 @@ async fn notify_connection(hostinfo: HostInfo, connection: &mut Connection<Tcp>)
             hostinfo.name(),
             hostinfo.file_num()
         ))
+        .appname(APP_NAME)
         .action("accepted", "Accept")
         .action("rejected", "Reject")
+        .hint(notify_rust::Hint::Category("transfer".into()))
+        .hint(notify_rust::Hint::Resident(true))
+        .urgency(Urgency::Normal)
+        .timeout(Timeout::Never)
         .show()
         .map_err(|_| io::Error::other("failed to show notification"))?
         .wait_for_action(|action| match action {

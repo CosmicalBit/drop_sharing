@@ -15,8 +15,17 @@ use crate::{
     encryption::key_agreement::sender::{key_exchange::init_sender_key_exchange, keygen::Secret},
     identity::{identity_definition::Identification, identity_exchange::key_exchange},
 };
+pub enum SenderInitError {
+    Io(io::Error),
+    Rejected,
+}
+impl From<io::Error> for SenderInitError {
+    fn from(value: io::Error) -> Self {
+        Self::Io(value)
+    }
+}
 
-pub async fn sender_init(num_of_files: u32) -> io::Result<(Secret, Connection<Tcp>)> {
+pub async fn sender_init(num_of_files: u32) -> Result<(Secret, Connection<Tcp>), SenderInitError> {
     let (listener, my_socket_addr) = Connection::<Tcp>::new_listen().await?;
 
     let identification = Identification::new();
@@ -37,7 +46,7 @@ pub async fn sender_init(num_of_files: u32) -> io::Result<(Secret, Connection<Tc
         return Err(io::Error::new(
             io::ErrorKind::TimedOut,
             "discovery timed out waiting for a receiver",
-        ));
+        ))?;
     };
 
     //send host

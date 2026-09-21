@@ -6,6 +6,7 @@ use std::{
     net::{Ipv4Addr, Ipv6Addr, SocketAddr, SocketAddrV4, SocketAddrV6},
 };
 
+use notify_rust::{Notification, Timeout, Urgency};
 use strum::EnumIter;
 
 use crate::{
@@ -14,10 +15,8 @@ use crate::{
             DecodeError, Deserialize,
             IndicationBytes::{self},
             Recieve, Serialize, Size,
-        },
-        hostinfo::Host,
-    },
-    identity::identity_definition::{IdentityContext, SIGNATURE_ADDED_SIZE},
+        }, hostinfo::{Host, HostInfo}, receiver::init::{APP_NAME, ConfirmMode}, sender::init::SenderInitError,
+    }, identity::identity_definition::{IdentityContext, SIGNATURE_ADDED_SIZE},
 };
 
 ///[`Message`] is used to be a generic stateless helper for recieving data over the network
@@ -43,13 +42,14 @@ pub struct TransferResponse {
     host: Host,
     decision: TransferDesision,
 }
+
 impl TransferResponse {
-    pub fn confirm(&self) -> io::Result<()> {
-        // TODO: maybe ask the user for confirmatio
-        match self.decision {
-            TransferDesision::Accepted => Ok(()),
-            TransferDesision::Rejected => Err(io::Error::new(io::ErrorKind::InvalidData, "transfer rejectedd")),
-        }
+    ///if this fn retursn none it means its rejected if yes its accepted
+    pub fn confirm(&self) -> Result<(),SenderInitError> {
+    match self.decision{
+        TransferDesision::Accepted => Ok(()),
+        TransferDesision::Rejected => Err(SenderInitError::Rejected),
+    }
     }
 }
 

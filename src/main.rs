@@ -33,7 +33,14 @@ async fn main() -> Result<(), TransferError> {
             let headers = build_header(&start_args.directory)?;
             let counter = headers.len();
 
-            let (secret, mut tcp) = sender_init(counter as u32).await?;
+            //TODO who i wnat to send too instead of going into rety again
+            let (secret, mut tcp) = loop {
+                match sender_init(counter as u32).await {
+                    Ok(connection) => break connection,
+                    Err(crate::discovery::sender::init::SenderInitError::Rejected) => continue,
+                    Err(crate::discovery::sender::init::SenderInitError::Io(error)) => return Err(error.into()),
+                }
+            };
 
             let cipher = Cipher::try_from(secret)?;
 
