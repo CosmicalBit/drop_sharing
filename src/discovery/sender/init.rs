@@ -25,6 +25,7 @@ impl From<io::Error> for SenderInitError {
     }
 }
 
+//TODO instead of udp use wifi direct
 pub async fn sender_init(num_of_files: u32) -> Result<(Secret, Connection<Tcp>), SenderInitError> {
     let (listener, my_socket_addr) = Connection::<Tcp>::new_listen().await?;
 
