@@ -3,4 +3,3 @@ mod hostinfo;
 pub mod message;
 pub mod receiver;
 pub mod sender;
-pub mod udp_logic;

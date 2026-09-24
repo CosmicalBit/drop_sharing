@@ -9,16 +9,16 @@ pub const APP_NAME: &str = env!("CARGO_PKG_NAME");
 use crate::{
     Cipher, Path, collect_files,
     discovery::{
-        connection::{Connection, Send, Serialize, Tcp, Udp},
+        connection::{Connection, Send, Serialize},
         hostinfo::HostInfo,
         message::{Message, TransferDesision, TransferResponse},
-        udp_logic::DiscoveryMessage,
     },
     encryption::{
         cipher::TransferError,
         key_agreement::{receiver::init_reciever_key_exchange, sender::keygen::Secret},
     },
     identity::{identity_definition::Identification, identity_exchange::key_exchange},
+    wpa::requests::{P2pConnection, receiver_connect},
 };
 
 pub enum ConfirmMode {
@@ -26,51 +26,33 @@ pub enum ConfirmMode {
     Notification,
 }
 
-pub async fn init_receiver(confirmation_mode: &ConfirmMode) -> io::Result<Option<(Secret, Connection<Tcp>, usize)>> {
+pub async fn init_receiver(confirmation_mode: &ConfirmMode) -> Result<Option<(Secret, P2pConnection, usize)>, TransferError> {
     let identification = Identification::new();
-    let mut udp = Connection::<Udp>::new_listen().await?;
-
-    let mut discoverer_msg = loop {
-        match Message::receive::<DiscoveryMessage>(&mut udp).await {
-            Ok(message) => break message,
-            Err(error) if error.kind() == io::ErrorKind::InvalidData => continue,
-            Err(error) => return Err(error),
-        }
-    };
-    let sender = udp
-        .last_sender()
-        .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidData, "couldnt get discovery sender"))?;
-    discoverer_msg.set_ip(sender.ip());
-
-    //connect to it
-    let mut tcp_connection = Connection::<Tcp>::new_send_n_listen(discoverer_msg.socket(), udp).await?;
+    let mut tcp_connection = receiver_connect().await?;
 
     //read_host
-    let host = Message::receive::<HostInfo>(&mut tcp_connection).await?;
+    let host = Message::receive::<HostInfo>(&mut tcp_connection.tcp).await?;
 
     //confirm if user wants to reciecve data
     let file_count = host.file_num();
 
     let was_accepted = match confirmation_mode {
-        ConfirmMode::Notification => notify_connection(host, &mut tcp_connection).await?,
-        ConfirmMode::Terminal => confirm_connection(host, &mut tcp_connection).await?,
+        ConfirmMode::Notification => notify_connection(host, &mut tcp_connection.tcp).await?,
+        ConfirmMode::Terminal => confirm_connection(host, &mut tcp_connection.tcp).await?,
     };
 
     if !was_accepted {
         return Ok(None);
     }
     //exchange keys
-    let identity_context = key_exchange(&mut tcp_connection, identification).await?;
+    let identity_context = key_exchange(&mut tcp_connection.tcp, identification).await?;
 
-    //check if the recieved pubident hash matches the actual key exchange identity
-    identity_context.verify_identifiy(discoverer_msg)?;
-
-    let secret = init_reciever_key_exchange(&mut tcp_connection, &identity_context).await?;
+    let secret = init_reciever_key_exchange(&mut tcp_connection.tcp, &identity_context).await?;
 
     Ok(Some((secret, tcp_connection, file_count)))
 }
 
-async fn confirm_connection(hostinfo: HostInfo, connection: &mut Connection<Tcp>) -> io::Result<bool> {
+async fn confirm_connection(hostinfo: HostInfo, connection: &mut Connection) -> io::Result<bool> {
     loop {
         let mut line = String::new();
         println!(
@@ -104,7 +86,7 @@ async fn confirm_connection(hostinfo: HostInfo, connection: &mut Connection<Tcp>
     }
 }
 
-async fn notify_connection(hostinfo: HostInfo, connection: &mut Connection<Tcp>) -> io::Result<bool> {
+async fn notify_connection(hostinfo: HostInfo, connection: &mut Connection) -> io::Result<bool> {
     let mut accepted = false;
 
     Notification::new()
@@ -151,14 +133,8 @@ pub async fn receive_once(mode: ConfirmMode) -> Result<(), TransferError> {
         return Ok(());
     };
 
-    tokio::spawn(async move {
-        let cipher = Cipher::try_from(secret)?;
-
-        collect_files(file_count, Path::new("received_files"), &cipher, &mut tcp).await?;
-
-        Ok::<(), TransferError>(())
-    })
-    .await??;
+    let cipher = Cipher::try_from(secret)?;
+    collect_files(file_count, Path::new("received_files"), &cipher, &mut tcp.tcp).await?;
 
     Ok(())
 }

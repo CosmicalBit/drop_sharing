@@ -1,12 +1,8 @@
 //! this module provides mainly [`Message`] to have an abstraction to recieving anny data type over network
 //!
 //! it also defines [`TransferDesision`] and [`TransferResponse`] for network communication and explicitnessa acception
-use std::{
-    io,
-    net::{Ipv4Addr, Ipv6Addr, SocketAddr, SocketAddrV4, SocketAddrV6},
-};
+use std::io;
 
-use notify_rust::{Notification, Timeout, Urgency};
 use strum::EnumIter;
 
 use crate::{
@@ -15,7 +11,7 @@ use crate::{
             DecodeError, Deserialize,
             IndicationBytes::{self},
             Recieve, Serialize, Size,
-        }, hostinfo::{Host, HostInfo}, receiver::init::{APP_NAME, ConfirmMode}, sender::init::SenderInitError,
+        }, hostinfo::Host,
     }, identity::identity_definition::{IdentityContext, SIGNATURE_ADDED_SIZE},
 };
 
@@ -44,12 +40,8 @@ pub struct TransferResponse {
 }
 
 impl TransferResponse {
-    ///if this fn retursn none it means its rejected if yes its accepted
-    pub fn confirm(&self) -> Result<(),SenderInitError> {
-    match self.decision{
-        TransferDesision::Accepted => Ok(()),
-        TransferDesision::Rejected => Err(SenderInitError::Rejected),
-    }
+    pub fn accepted(&self) -> bool {
+        self.decision == TransferDesision::Accepted
     }
 }
 
@@ -226,98 +218,12 @@ fn invalid_data(error: DecodeError) -> io::Error {
     io::Error::new(io::ErrorKind::InvalidData, error)
 }
 
-impl Serialize for SocketAddr {
-    fn serialize(&self) -> Box<[u8]> {
-        match self {
-            SocketAddr::V4(addr) => {
-                let mut out = Vec::with_capacity(20);
-
-                out.push(IndicationBytes::MagicInit as u8);
-                out.push(4); // ipv4
-                out.extend_from_slice(&addr.ip().octets());
-                out.extend_from_slice(&addr.port().to_be_bytes());
-                out.extend_from_slice(&[0u8; 12]);
-
-                out.into_boxed_slice()
-            },
-            SocketAddr::V6(addr) => {
-                let mut out = Vec::with_capacity(20);
-
-                out.push(IndicationBytes::MagicInit as u8);
-                out.push(6); // ipv6
-                out.extend_from_slice(&addr.ip().octets());
-                out.extend_from_slice(&addr.port().to_be_bytes());
-                out.into_boxed_slice()
-            },
-        }
-    }
-}
-
-impl Deserialize for SocketAddr {
-    type Output = Self;
-    const SIZE: Size = Size::Fixed(20);
-
-    fn deserialize(data: &[u8]) -> Result<Self, DecodeError> {
-        if data.len() != 20 {
-            return Err(DecodeError::Truncated {
-                expected: 20,
-                actual: data.len(),
-            });
-        }
-
-        let ip = data[1];
-
-        match ip {
-            4 => {
-                //ipv4
-                let ip = Ipv4Addr::new(data[2], data[3], data[4], data[5]);
-                let port = u16::from_be_bytes([data[6], data[7]]);
-
-                Ok(SocketAddr::V4(SocketAddrV4::new(ip, port)))
-            },
-            6 => {
-                //ipv6
-                let mut ip = [0u8; 16];
-                ip.copy_from_slice(&data[2..18]);
-                let port = u16::from_be_bytes([data[18], data[19]]);
-                let ip = Ipv6Addr::from_octets(ip);
-
-                Ok(SocketAddr::V6(SocketAddrV6::new(ip, port, 0, 0)))
-            },
-            _ => Err(DecodeError::InvalidValue("unsupported IP version")),
-        }
-    }
-}
-
 #[cfg(test)]
 mod test {
     use strum::IntoEnumIterator;
 
     use super::*;
 
-    fn msg_sckaddr() -> (SocketAddr, SocketAddr) {
-        let ipv4: SocketAddr = "127.0.0.1:4242".parse().unwrap();
-        let ipv6: SocketAddr = "[::1]:4242".parse().unwrap();
-
-        (ipv4, ipv6)
-    }
-
-    #[test]
-    fn check_deserialized_serialize_round_trip() {
-        let (org_ipv4, ipv6) = msg_sckaddr();
-
-        let serialized = org_ipv4.clone().serialize();
-
-        let deserialized = SocketAddr::deserialize(&serialized).unwrap();
-
-        assert_eq!(deserialized, org_ipv4);
-
-        let serialized = ipv6.clone().serialize();
-
-        let deserialized = SocketAddr::deserialize(&serialized).unwrap();
-
-        assert_eq!(deserialized, ipv6);
-    }
     #[test]
     fn round_trip_of_transfer_responce() {
         for decision in TransferDesision::iter() {
