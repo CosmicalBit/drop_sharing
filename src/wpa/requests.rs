@@ -64,13 +64,11 @@ impl Wpa {
         let deadline = Instant::now() + Duration::from_secs(5);
         while Instant::now() < deadline {
             if let Some(event) = self.wpa.recv()? {
-                if event_name(&event) == Some("P2P-DEVICE-FOUND") {
-                    if let Some(address) = get_p2p_device_address(&event) {
-                        if !receivers.iter().any(|receiver| receiver == address) {
+                if event_name(&event) == Some("P2P-DEVICE-FOUND")
+                    && let Some(address) = get_p2p_device_address(&event)
+                        && !receivers.iter().any(|receiver| receiver == address) {
                             receivers.push(address.to_owned());
                         }
-                    }
-                }
             } else {
                 sleep(POLL_INTERVAL).await;
             }
@@ -159,14 +157,13 @@ fn control_path() -> io::Result<PathBuf> {
     let mut interface = None;
     for entry in fs::read_dir("/sys/class/net")? {
         let entry = entry?;
-        if entry.path().join("wireless").is_dir() {
-            if interface.replace(entry.file_name()).is_some() {
+        if entry.path().join("wireless").is_dir()
+            && interface.replace(entry.file_name()).is_some() {
                 return Err(io::Error::new(
                     io::ErrorKind::InvalidInput,
                     "multiple Wi-Fi interfaces found; set DROP_SHARING_WPA_CTRL_PATH",
                 ));
             }
-        }
     }
     let interface = interface.ok_or_else(|| {
         io::Error::new(io::ErrorKind::NotFound, "no Wi-Fi interface found; set DROP_SHARING_WPA_CTRL_PATH")
@@ -193,11 +190,10 @@ pub fn choose_receiver(receivers: &[String]) -> Result<String, TransferError> {
             return Err(io::Error::new(io::ErrorKind::UnexpectedEof, "no receiver selected").into());
         }
 
-        if let Ok(index) = input.trim().parse::<usize>() {
-            if let Some(receiver) = index.checked_sub(1).and_then(|index| receivers.get(index)) {
+        if let Ok(index) = input.trim().parse::<usize>()
+            && let Some(receiver) = index.checked_sub(1).and_then(|index| receivers.get(index)) {
                 return Ok(receiver.clone());
             }
-        }
 
         println!("Enter a number from 1 to {}.", receivers.len());
     }
