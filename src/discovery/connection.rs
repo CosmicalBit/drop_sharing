@@ -2,24 +2,22 @@
 //! Its all network + generalize protocol definitions, sutch as indication bytes.
 //! Everything thing that is consistent over the protocol and applies over or is related too [`Connection`]
 
-use std::{
-    io::{self},
-    net::SocketAddr,
-};
+use std::{io, net::Ipv4Addr};
 
 use ml_dsa::SignatureEncoding;
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
-    net::{TcpListener, TcpStream, UdpSocket},
+    net::{TcpListener, TcpStream},
 };
 
 use crate::identity::identity_definition::IdentityContext;
 
-///Indication bytes is is used in tcp and udp connections to identify what we are reading
+const LISTENER_PORT: u16 = 50000;
+
+///Indication bytes identify messages sent over the connection.
 #[repr(u8)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum IndicationBytes {
-    MagicInit = 1,
     HostInfo = 2,
     TransferResponse = 3,
     HostName = 4,
@@ -29,122 +27,54 @@ pub enum IndicationBytes {
     File = 8,
 }
 
-pub struct Tcp {
+/// A TCP stream over the Wi-Fi Direct group.
+pub struct Connection {
     stream: TcpStream,
 }
-impl Tcp {
-    pub fn new(stream: TcpStream) -> Self {
-        Self { stream }
+
+impl Connection {
+    pub async fn new_listen() -> io::Result<Self> {
+        let listener = TcpListener::bind(("0.0.0.0", LISTENER_PORT)).await?;
+        let (stream, _) = listener.accept().await?;
+
+        Ok(Self { stream })
     }
-}
-pub struct Udp {
-    stream: UdpSocket,
-    last_sender: Option<SocketAddr>,
-}
-impl Udp {
-    pub fn new(stream: UdpSocket) -> Self {
-        Self { stream, last_sender: None }
-    }
-}
+    pub async fn connect(ip: Ipv4Addr) -> io::Result<Self> {
+        let stream = TcpStream::connect((ip, LISTENER_PORT)).await?;
 
-///[`Connection<Mode>`] is used to send data and do data operations
-/// over [`Tcp`] or [`Udp`]
-pub struct Connection<Mode> {
-    mode: Mode,
-}
-
-impl Connection<Tcp> {
-    pub async fn new_listen() -> io::Result<(TcpListener, SocketAddr)> {
-        let listener = TcpListener::bind("0.0.0.0:0").await?;
-        let my_addr = listener.local_addr()?;
-
-        Ok((listener, my_addr))
-    }
-    //it takes old connection just to make sure i dont accidentaly use it
-    pub async fn new_send_n_listen(addr: SocketAddr, _old_connection: Connection<Udp>) -> io::Result<Self> {
-        let socket = TcpStream::connect(addr).await?;
-
-        Ok(Self { mode: Tcp::new(socket) })
-    }
-    pub async fn accept(listener: &TcpListener) -> io::Result<Self> {
-        let (stream, _sender) = listener.accept().await?;
-
-        Ok(Self { mode: Tcp::new(stream) })
+        Ok(Self { stream })
     }
 }
 
-impl Send for Connection<Tcp> {
+impl Send for Connection {
     async fn send(&mut self, buffer: &[u8]) -> io::Result<()> {
-        self.mode.stream.write_all(buffer).await?;
+        self.stream.write_all(buffer).await?;
 
         Ok(())
     }
 }
-impl SendSign for Connection<Tcp> {
+impl SendSign for Connection {
     async fn send_n_sign(&mut self, buffer: &[u8], identity_context: &IdentityContext) -> io::Result<()> {
         let signature = identity_context.sign(buffer).to_bytes();
         let mut signed = Vec::with_capacity(buffer.len() + signature.len());
         signed.extend_from_slice(buffer);
         signed.extend_from_slice(&signature);
-        self.mode.stream.write_all(&signed).await?;
+        self.stream.write_all(&signed).await?;
 
         Ok(())
     }
 }
 
-impl Recieve for Connection<Tcp> {
+impl Recieve for Connection {
     async fn recieve(&mut self, buffer: &mut [u8]) -> io::Result<()> {
-        self.mode.stream.readable().await?;
+        self.stream.readable().await?;
 
-        self.mode.stream.read_exact(buffer).await?;
-
-        Ok(())
-    }
-}
-
-impl Connection<Udp> {
-    pub async fn new_listen() -> io::Result<Self> {
-        let socket = UdpSocket::bind("0.0.0.0:4242").await?;
-
-        Ok(Self { mode: Udp::new(socket) })
-    }
-
-    async fn new_broadcast() -> io::Result<Self> {
-        let udp = UdpSocket::bind("0.0.0.0:0").await?;
-
-        udp.set_broadcast(true)?;
-
-        Ok(Self { mode: Udp::new(udp) })
-    }
-    pub async fn start_broadcast_and_send(data: &[u8]) -> io::Result<()> {
-        let broadcast = Connection::<Udp>::new_broadcast().await?;
-
-        broadcast.mode.stream.writable().await?;
-
-        broadcast.mode.stream.send_to(data, "255.255.255.255:4242").await?;
-        broadcast.mode.stream.send_to(data, "127.0.0.1:4242").await?;
-
-        Ok(())
-    }
-
-    pub fn last_sender(&self) -> Option<SocketAddr> {
-        self.mode.last_sender
-    }
-}
-
-impl Recieve for Connection<Udp> {
-    async fn recieve(&mut self, buffer: &mut [u8]) -> io::Result<()> {
-        self.mode.stream.readable().await?;
-
-        let (len, sender) = self.mode.stream.recv_from(buffer).await?;
-        if len != buffer.len() {
-            return Err(io::Error::new(io::ErrorKind::UnexpectedEof, "incomplete UDP message"));
-        }
-        self.mode.last_sender = Some(sender);
+        self.stream.read_exact(buffer).await?;
 
         Ok(())
     }
 }
+
 pub trait Serialize {
     fn serialize(&self) -> Box<[u8]>;
 }
@@ -219,8 +149,7 @@ pub trait Deserialize: Sized {
     fn deserialize(data: &[u8]) -> Result<Self::Output, DecodeError>;
 }
 
-///the trait [`Recieve`] just specifies the recieve func signature to make make consistent over [`Connection<Mode>`]
-/// that can be [`Tcp`] or [`Udp`]
+/// The receive operation used by the message decoder.
 pub trait Recieve {
     async fn recieve(&mut self, buffer: &mut [u8]) -> io::Result<()>;
 }

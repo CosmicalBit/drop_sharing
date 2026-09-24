@@ -16,7 +16,6 @@ opt-level = 3
 strip = "symbols"
 
 [dependencies]
-blake3 = "1.8.7"
 chacha20poly1305 = "0.11.0"
 clap = { version = "4.6.6", features = ["derive"] }
 hostname = "0.4.2"
@@ -25,6 +24,7 @@ ml-kem = {version = "0.3.2",features = ["getrandom","zeroize"]}
 notify-rust = "4.18.0"
 strum = { version = "0.28.0", features = ["derive"] }
 tokio = { version = "1.53.1", features = ["full"] }
+wpactrl = "0.5.1"
 zeroize = "1.9.0"
 
 [dev-dependencies]

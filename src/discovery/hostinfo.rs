@@ -24,9 +24,6 @@ impl Host {
 
         Ok(Self { name })
     }
-    pub fn name(&self)->&str{
-        &self.name
-    }
 }
 
 impl Serialize for Host {

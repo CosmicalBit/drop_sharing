@@ -23,6 +23,7 @@ mod discovery;
 mod encryption;
 mod file_collection;
 mod identity;
+mod wpa;
 
 #[tokio::main]
 async fn main() -> Result<(), TransferError> {
@@ -33,18 +34,16 @@ async fn main() -> Result<(), TransferError> {
             let headers = build_header(&start_args.directory)?;
             let counter = headers.len();
 
-            //TODO who i wnat to send too instead of going into rety again
             let (secret, mut tcp) = loop {
-                match sender_init(counter as u32).await {
-                    Ok(connection) => break connection,
-                    Err(crate::discovery::sender::init::SenderInitError::Rejected) => continue,
-                    Err(crate::discovery::sender::init::SenderInitError::Io(error)) => return Err(error.into()),
+                match sender_init(counter as u32).await? {
+                    Some(connection) => break connection,
+                    None => continue,
                 }
             };
 
             let cipher = Cipher::try_from(secret)?;
 
-            send_files(&headers, &cipher, &mut tcp).await?;
+            send_files(&headers, &cipher, &mut tcp.tcp).await?;
             return Ok(());
         },
 

@@ -10,7 +10,7 @@ use tokio::{
 };
 
 use crate::{
-    discovery::connection::{Connection, DecodeError, IndicationBytes, Recieve, Send, Serialize, Tcp},
+    discovery::connection::{Connection, DecodeError, IndicationBytes, Recieve, Send, Serialize},
     encryption::cipher::{Cipher, TransferError},
     file_collection::tree_walking::FileHeader,
 };
@@ -31,7 +31,7 @@ struct IncomingFile {
     chunk_size: usize,
 }
 
-pub async fn send_files(headers: &[FileHeader], cipher: &Cipher, tcp: &mut Connection<Tcp>) -> Result<(), TransferError> {
+pub async fn send_files(headers: &[FileHeader], cipher: &Cipher, tcp: &mut Connection) -> Result<(), TransferError> {
     if headers.len() > MAX_FILE_COUNT {
         return Err(invalid_data(DecodeError::InvalidValue("too many files")).into());
     }
@@ -43,7 +43,7 @@ pub async fn send_files(headers: &[FileHeader], cipher: &Cipher, tcp: &mut Conne
     Ok(())
 }
 
-async fn send_file(header: &FileHeader, cipher: &Cipher, tcp: &mut Connection<Tcp>) -> Result<(), TransferError> {
+async fn send_file(header: &FileHeader, cipher: &Cipher, tcp: &mut Connection) -> Result<(), TransferError> {
     let chunk_size = header.chunk_size() as usize;
     if chunk_size == 0 || chunk_size > MAX_CHUNK_SIZE {
         return Err(TransferError::InvalidChunkSize);
@@ -73,7 +73,7 @@ pub async fn collect_files(
     advertised_file_count: usize,
     output_directory: &Path,
     cipher: &Cipher,
-    tcp: &mut Connection<Tcp>,
+    tcp: &mut Connection,
 ) -> Result<(), TransferError> {
     if advertised_file_count > MAX_FILE_COUNT {
         return Err(invalid_data(DecodeError::InvalidValue("file count is too large")).into());
@@ -89,7 +89,7 @@ pub async fn collect_files(
     Ok(())
 }
 
-async fn receive_file_header(tcp: &mut Connection<Tcp>) -> Result<IncomingFile, TransferError> {
+async fn receive_file_header(tcp: &mut Connection) -> Result<IncomingFile, TransferError> {
     let mut header = vec![0u8; HEADER_PREFIX_SIZE];
     tcp.recieve(&mut header).await?;
 
@@ -131,7 +131,7 @@ async fn receive_file(
     output_directory: &Path,
     incoming: IncomingFile,
     cipher: &Cipher,
-    tcp: &mut Connection<Tcp>,
+    tcp: &mut Connection,
 ) -> Result<(), TransferError> {
     let final_path = output_directory.join(&incoming.path);
     let parent = final_path
@@ -147,7 +147,7 @@ async fn receive_chunks(
     file: &mut fs::File,
     incoming: &IncomingFile,
     cipher: &Cipher,
-    tcp: &mut Connection<Tcp>,
+    tcp: &mut Connection,
 ) -> Result<(), TransferError> {
     let chunk_count = incoming.file_size.div_ceil(incoming.chunk_size as u64);
     let mut remaining = incoming.file_size;
