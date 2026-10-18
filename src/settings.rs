@@ -1,11 +1,11 @@
 use crate::TransferError;
 use postcard;
 use serde::{Deserialize, Serialize};
-use std::{fs, path::Path, path::PathBuf};
+use std::{fs, path::PathBuf};
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Clone)]
 pub struct Configs {
-    pub recieve_dir: PathBuf,
+    pub download_dir: PathBuf,
 }
 
 fn configs_path() -> Result<PathBuf, TransferError> {
@@ -15,10 +15,10 @@ fn configs_path() -> Result<PathBuf, TransferError> {
 }
 
 impl Configs {
-    fn new_hidden() -> Result<Self, TransferError> {
+    pub fn set_default() -> Result<Self, TransferError> {
         let dir = dirs::download_dir().ok_or(TransferError::Custom("Couldnt find download dir".to_string()))?;
 
-        let config = Self { recieve_dir: dir };
+        let config = Self { download_dir: dir };
 
         config.save_config()?;
 
@@ -27,16 +27,23 @@ impl Configs {
     pub fn new() -> Result<Self, TransferError> {
         if configs_path()?.is_file() {
             let bytes = std::fs::read(configs_path()?)?;
-            let config: Configs = postcard::from_bytes(&bytes).unwrap_or(Configs::new_hidden()?);
+            let config: Configs = match postcard::from_bytes(&bytes) {
+                Ok(config) => config,
+                Err(_) => Configs::set_default()?,
+            };
             Ok(config)
         } else {
-            Configs::new_hidden()
+            Configs::set_default()
         }
     }
 
-    fn save_config(&self) -> Result<(), TransferError> {
+    pub fn save_config(&self) -> Result<(), TransferError> {
         let bytes = postcard::to_stdvec(&self).map_err(|_| TransferError::Custom("impossible to convert settings to bytes".to_string()))?;
-        fs::write(configs_path()?, bytes)?;
+        let path = configs_path()?;
+        if let Some(parent) = path.parent() {
+            fs::create_dir_all(parent)?;
+        }
+        fs::write(path, bytes)?;
 
         Ok(())
     }

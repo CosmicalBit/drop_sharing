@@ -37,7 +37,7 @@ async fn main() -> Result<(), TransferError> {
 
     let command = commands.command.unwrap_or(Command::GUI);
 
-    let config = Configs::new()?;
+    let mut config = Configs::new()?;
 
     match command {
         StartSender(start_args) => {
@@ -75,6 +75,7 @@ async fn main() -> Result<(), TransferError> {
             let (incoming_tx, incoming_rx) = watch::channel(None::<crate::discovery::hostinfo::HostInfo>);
             let (selected_files_tx, selected_files_rx) = watch::channel(None::<Vec<PathBuf>>);
             let (mode_tx, mode_rx) = watch::channel(None::<CommunicationMode>);
+            let (settings_tx, settings_rx) = watch::channel(None::<Configs>);
 
             let communication = Communication::new(
                 devices_rx,
@@ -84,6 +85,7 @@ async fn main() -> Result<(), TransferError> {
                 incoming_rx,
                 selected_files_tx,
                 mode_tx,
+                settings_tx,
             );
             let mut backend_communication = BackendCommunication::new(
                 devices_tx,
@@ -93,11 +95,15 @@ async fn main() -> Result<(), TransferError> {
                 incoming_tx,
                 selected_files_rx,
                 mode_rx,
+                settings_rx,
             );
-            let app = Box::new(AppData::new(communication));
+            let app = Box::new(AppData::new(communication, config.clone()));
 
             tokio::spawn(async move {
                 while let Ok(mode) = crate::ui::receive_value(&mut backend_communication.mode).await {
+                    if let Some(configs) = backend_communication.configs.borrow_and_update().clone() {
+                        config = configs;
+                    }
                     match mode {
                         CommunicationMode::Sender => {
                             let files = crate::ui::receive_value(&mut backend_communication.selected_files_to_send).await?;
@@ -123,15 +129,16 @@ async fn main() -> Result<(), TransferError> {
                             send_files(&headers, &cipher, &mut tcp.tcp, Some(&backend_communication)).await?;
                         },
 
-                        CommunicationMode::Reciever => {
-                            loop {
-                                if receive_once(ConfirmMode::Notification, Some(&mut backend_communication), &config).await? {
-                                    backend_communication.progress.send(Some(1.0))
-                                        .map_err(|_| io::Error::new(io::ErrorKind::BrokenPipe, "GUI progress channel closed"))?;
-                                    break;
-                                }
+                        CommunicationMode::Reciever => loop {
+                            if receive_once(ConfirmMode::Notification, Some(&mut backend_communication), &config).await? {
+                                backend_communication
+                                    .progress
+                                    .send(Some(1.0))
+                                    .map_err(|_| io::Error::new(io::ErrorKind::BrokenPipe, "GUI progress channel closed"))?;
+                                break;
                             }
                         },
+                        CommunicationMode::Settings => {},
                     }
                 }
                 Ok::<(), TransferError>(())
