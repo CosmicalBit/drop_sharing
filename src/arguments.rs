@@ -1,15 +1,17 @@
 use std::path::PathBuf;
 
+use crate::ui::BackendCommunication;
 use clap::{Args, Parser, Subcommand};
-
+use eframe::wgpu::Backend;
 #[derive(Parser)]
 pub struct Cli {
     #[command(subcommand)]
-    pub command: Command,
+    pub command: Option<Command>,
 }
 
 #[derive(Subcommand)]
 pub enum Command {
+    GUI,
     StartSender(StartArgs),
     StartReceiver(ReceiverArgs),
 }

@@ -1,15 +1,15 @@
+use crate::ui::BackendCommunication;
 use std::{
     fs,
     io::{self, Write},
     path::{Path, PathBuf},
     time::Duration,
 };
-
 use tokio::time::{Instant, sleep, timeout};
 use wpactrl::ClientAttached;
 
 use crate::{
-    discovery::connection::{Connection},
+    discovery::connection::Connection,
     encryption::cipher::TransferError,
     wpa::parser::{P2pGroupStarted, P2pRole, parse_group_started},
 };
@@ -40,10 +40,7 @@ impl Drop for P2pGroupGuard {
 
 impl Wpa {
     fn init() -> Result<Self, TransferError> {
-        let wpa = wpactrl::Client::builder()
-            .ctrl_path(control_path()?)
-            .open()?
-            .attach()?;
+        let wpa = wpactrl::Client::builder().ctrl_path(control_path()?).open()?.attach()?;
 
         Ok(Self { wpa })
     }
@@ -57,7 +54,7 @@ impl Wpa {
         }
     }
 
-    async fn search(&mut self) -> Result<String, TransferError> {
+    async fn search(&mut self, command: Option<&mut BackendCommunication>) -> Result<String, TransferError> {
         self.request_ok("P2P_FIND")?;
 
         let mut receivers = Vec::new();
@@ -77,7 +74,12 @@ impl Wpa {
         }
         self.request_ok("P2P_STOP_FIND")?;
 
-        choose_receiver(&receivers)
+        let chosen = match command {
+            Some(backend) => choose_receiver_gui(&receivers, backend).await?,
+            None => choose_receiver_terminal(&receivers)?,
+        };
+
+        Ok(chosen)
     }
 
     async fn wait_for_group(&mut self) -> Result<P2pGroupStarted, TransferError> {
@@ -99,28 +101,31 @@ impl Wpa {
 
     async fn connect_tcp(mut self) -> Result<P2pConnection, TransferError> {
         let group = self.wait_for_group().await?;
-        let guard = P2pGroupGuard { wpa: self.wpa, interface: group.interface };
+        let guard = P2pGroupGuard {
+            wpa: self.wpa,
+            interface: group.interface,
+        };
         let tcp = match group.role {
             P2pRole::GroupOwner => timeout(TCP_TIMEOUT, Connection::new_listen())
                 .await
                 .map_err(|_| io::Error::new(io::ErrorKind::TimedOut, "Wi-Fi Direct TCP accept timed out"))?
                 .map_err(TransferError::from)?,
             P2pRole::Client => {
-                let go_ip = group.go_ip.ok_or_else(|| {
-                    io::Error::new(io::ErrorKind::InvalidData, "Wi-Fi Direct group has no owner IP address")
-                })?;
+                let go_ip = group
+                    .go_ip
+                    .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidData, "Wi-Fi Direct group has no owner IP address"))?;
                 let deadline = Instant::now() + TCP_TIMEOUT;
                 loop {
                     match timeout(deadline.saturating_duration_since(Instant::now()), Connection::connect(go_ip)).await {
                         Ok(Ok(connection)) => break connection,
                         Ok(Err(_)) if Instant::now() < deadline => {
                             sleep(POLL_INTERVAL).await;
-                        }
+                        },
                         Ok(Err(error)) => return Err(error.into()),
                         Err(_) => return Err(io::Error::new(io::ErrorKind::TimedOut, "Wi-Fi Direct TCP connect timed out").into()),
                     }
                 }
-            }
+            },
         };
         Ok(P2pConnection { tcp, _group: guard })
     }
@@ -135,9 +140,10 @@ impl Wpa {
         loop {
             if let Some(event) = self.wpa.recv()? {
                 if matches!(event_name(&event), Some("P2P-GO-NEG-REQUEST" | "P2P-PROV-DISC-PBC-REQ")) {
-                    let address = event.split_whitespace().nth(1).ok_or_else(|| {
-                        io::Error::new(io::ErrorKind::InvalidData, "Wi-Fi Direct request has no peer address")
-                    })?;
+                    let address = event
+                        .split_whitespace()
+                        .nth(1)
+                        .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidData, "Wi-Fi Direct request has no peer address"))?;
                     self.request_ok(&format!("P2P_CONNECT {address} pbc"))?;
                     return self.connect_tcp().await;
                 }
@@ -168,13 +174,12 @@ fn control_path() -> io::Result<PathBuf> {
             }
         }
     }
-    let interface = interface.ok_or_else(|| {
-        io::Error::new(io::ErrorKind::NotFound, "no Wi-Fi interface found; set DROP_SHARING_WPA_CTRL_PATH")
-    })?;
+    let interface =
+        interface.ok_or_else(|| io::Error::new(io::ErrorKind::NotFound, "no Wi-Fi interface found; set DROP_SHARING_WPA_CTRL_PATH"))?;
     Ok(Path::new("/run/wpa_supplicant").join(interface))
 }
 
-pub fn choose_receiver(receivers: &[String]) -> Result<String, TransferError> {
+pub fn choose_receiver_terminal(receivers: &[String]) -> Result<String, TransferError> {
     if receivers.is_empty() {
         return Err(io::Error::new(io::ErrorKind::NotFound, "no receivers found").into());
     }
@@ -203,6 +208,18 @@ pub fn choose_receiver(receivers: &[String]) -> Result<String, TransferError> {
     }
 }
 
+pub async fn choose_receiver_gui(receivers: &[String], backend: &mut BackendCommunication) -> Result<String, TransferError> {
+    backend.all_devices_can_send_too.send(Some(receivers.to_vec()))
+        .map_err(|_| io::Error::new(io::ErrorKind::BrokenPipe, "GUI device list channel closed"))?;
+
+    backend.chosen_reciever.changed().await
+        .map_err(|_| io::Error::new(io::ErrorKind::BrokenPipe, "GUI receiver selection channel closed"))?;
+    let chosen = backend.chosen_reciever.borrow_and_update().clone()
+        .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidData, "GUI receiver selection was empty"))?;
+
+    Ok(chosen)
+}
+
 fn event_name(event: &str) -> Option<&str> {
     let event = event.trim_start();
     let event = if let Some(rest) = event.strip_prefix('<') {
@@ -217,9 +234,9 @@ fn get_p2p_device_address(event: &str) -> Option<&str> {
     event.split_whitespace().find_map(|field| field.strip_prefix("p2p_dev_addr="))
 }
 
-pub async fn sender_connect() -> Result<P2pConnection, TransferError> {
+pub async fn sender_connect(backend: Option<&mut BackendCommunication>) -> Result<P2pConnection, TransferError> {
     let mut wpa = Wpa::init()?;
-    let address = wpa.search().await?;
+    let address = wpa.search(backend).await?;
     wpa.connect(&address).await
 }
 

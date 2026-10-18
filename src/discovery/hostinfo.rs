@@ -107,7 +107,7 @@ impl TryFrom<&[u8]> for Host {
 
 ///[`HostInfo`] stores a [`Host`] plus the ammount of files that will be sent over `Tcp` later on
 #[derive(PartialEq, Eq, Debug, Clone)]
-pub struct HostInfo {
+pub(crate) struct HostInfo {
     host: Host,
     num_of_files: u32,
 }

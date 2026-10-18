@@ -12,7 +12,8 @@ use tokio::{
 use crate::{
     discovery::connection::{Connection, DecodeError, IndicationBytes, Recieve, Send, Serialize},
     encryption::cipher::{Cipher, TransferError},
-    file_collection::tree_walking::FileHeader,
+    file_collection::tree_walking::{CHUNCK_SIZE, FileHeader},
+    ui::BackendCommunication,
 };
 
 const HEADER_PREFIX_SIZE: usize = 5;
@@ -31,39 +32,78 @@ struct IncomingFile {
     chunk_size: usize,
 }
 
-pub async fn send_files(headers: &[FileHeader], cipher: &Cipher, tcp: &mut Connection) -> Result<(), TransferError> {
+pub async fn send_files(
+    headers: &[FileHeader],
+    cipher: &Cipher,
+    tcp: &mut Connection,
+    backend: Option<&BackendCommunication>,
+) -> Result<(), TransferError> {
     if headers.len() > MAX_FILE_COUNT {
         return Err(invalid_data(DecodeError::InvalidValue("too many files")).into());
     }
 
+    let total_bytes = total_size(headers)?;
+    let mut sent_bytes = 0u64;
     for header in headers {
-        send_file(header, cipher, tcp).await?;
+        send_file(header, cipher, tcp, &mut sent_bytes, total_bytes, backend).await?;
+    }
+
+    if total_bytes == 0
+        && let Some(backend) = backend
+    {
+        update_progress(total_bytes, sent_bytes, backend)?;
     }
 
     Ok(())
 }
+fn update_progress(total_bytes: u64, sent_bytes: u64, backend: &BackendCommunication) -> Result<(), TransferError> {
+    let percentage = if total_bytes == 0 {
+        1.0
+    } else {
+        (sent_bytes as f32 / total_bytes as f32).clamp(0.0, 1.0)
+    };
 
-async fn send_file(header: &FileHeader, cipher: &Cipher, tcp: &mut Connection) -> Result<(), TransferError> {
-    let chunk_size = header.chunk_size() as usize;
-    if chunk_size == 0 || chunk_size > MAX_CHUNK_SIZE {
+    backend
+        .progress
+        .send(Some(percentage))
+        .map_err(|error| io::Error::new(io::ErrorKind::BrokenPipe, error))?;
+    Ok(())
+}
+
+async fn send_file(
+    header: &FileHeader,
+    cipher: &Cipher,
+    tcp: &mut Connection,
+    sent_bytes: &mut u64,
+    total_bytes: u64,
+    backend: Option<&BackendCommunication>,
+) -> Result<(), TransferError> {
+    if CHUNCK_SIZE == 0 || CHUNCK_SIZE > MAX_CHUNK_SIZE {
         return Err(TransferError::InvalidChunkSize);
     }
 
+    //send header
     let mut file = File::open(header.path())?;
     let serialized_header = header.serialize();
     tcp.send(&serialized_header).await?;
 
-    let chunk_count = header.file_size().div_ceil(chunk_size as u64);
+    let chunk_size = u64::try_from(CHUNCK_SIZE)?;
+    let chunk_count = header.file_size().div_ceil(chunk_size);
     let mut remaining = header.file_size();
+
     for chunk_index in 0..chunk_count {
-        let current_size = remaining.min(chunk_size as u64) as usize;
-        let mut chunk = vec![0u8; current_size];
+        let current_size = remaining.min(chunk_size);
+        let mut chunk = vec![0u8; usize::try_from(current_size)?];
         file.read_exact(&mut chunk)?;
 
         let aad = chunk_aad(&serialized_header, chunk_index);
         tcp.send(&chunk_index.to_be_bytes()).await?;
         tcp.send(&cipher.encrypt(&chunk, &aad)?).await?;
-        remaining -= current_size as u64;
+        remaining -= current_size;
+        *sent_bytes += current_size;
+        if let Some(backend) = backend {
+            update_progress(total_bytes, *sent_bytes, backend)?;
+        }
     }
 
     Ok(())
@@ -127,28 +167,19 @@ async fn receive_file_header(tcp: &mut Connection) -> Result<IncomingFile, Trans
     })
 }
 
-async fn receive_file(
-    output_directory: &Path,
-    incoming: IncomingFile,
-    cipher: &Cipher,
-    tcp: &mut Connection,
-) -> Result<(), TransferError> {
+async fn receive_file(output_directory: &Path, incoming: IncomingFile, cipher: &Cipher, tcp: &mut Connection) -> Result<(), TransferError> {
     let final_path = output_directory.join(&incoming.path);
     let parent = final_path
         .parent()
         .ok_or_else(|| invalid_data(DecodeError::InvalidValue("file has no parent directory")))?;
+
     fs::create_dir_all(parent).await?;
     let mut file = fs::File::create(final_path).await?;
 
     receive_chunks(&mut file, &incoming, cipher, tcp).await
 }
 
-async fn receive_chunks(
-    file: &mut fs::File,
-    incoming: &IncomingFile,
-    cipher: &Cipher,
-    tcp: &mut Connection,
-) -> Result<(), TransferError> {
+async fn receive_chunks(file: &mut fs::File, incoming: &IncomingFile, cipher: &Cipher, tcp: &mut Connection) -> Result<(), TransferError> {
     let chunk_count = incoming.file_size.div_ceil(incoming.chunk_size as u64);
     let mut remaining = incoming.file_size;
 
@@ -217,6 +248,16 @@ fn validate_relative_path(file_name: &str) -> io::Result<PathBuf> {
 
 fn invalid_data(error: DecodeError) -> io::Error {
     io::Error::new(io::ErrorKind::InvalidData, error)
+}
+
+//count the total size
+fn total_size(headers: &[FileHeader]) -> Result<u64, TransferError> {
+    let mut size: u64 = 0;
+
+    for header in headers {
+        size = size.checked_add(header.file_size()).ok_or(TransferError::Math)?;
+    }
+    Ok(size)
 }
 
 #[cfg(test)]

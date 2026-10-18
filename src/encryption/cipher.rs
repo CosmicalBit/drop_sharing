@@ -13,8 +13,23 @@ pub enum TransferError {
     Encryption(chacha20poly1305::Error),
     InvalidChunkSize,
     Wpa(wpactrl::Error),
+    Ui(eframe::Error),
+    Tokio,
+    Custom(String),
+    Math,
+    Conversion(std::num::TryFromIntError),
+}
+impl From<std::num::TryFromIntError> for TransferError {
+    fn from(value: std::num::TryFromIntError) -> Self {
+        Self::Conversion(value)
+    }
 }
 
+impl From<tokio::task::JoinError> for TransferError {
+    fn from(value: tokio::task::JoinError) -> Self {
+        Self::Tokio
+    }
+}
 impl From<wpactrl::Error> for TransferError {
     fn from(value: wpactrl::Error) -> Self {
         Self::Wpa(value)
@@ -27,6 +42,11 @@ impl std::fmt::Display for TransferError {
             Self::Encryption(error) => write!(formatter, "encryption error: {error}"),
             Self::InvalidChunkSize => formatter.write_str("invalid chunk size"),
             Self::Wpa(error) => error.fmt(formatter),
+            Self::Ui(err) => err.fmt(formatter),
+            Self::Tokio => formatter.write_str("tokio error"),
+            Self::Conversion(error) => error.fmt(formatter),
+            Self::Math => formatter.write_str("theres was a math error"),
+            Self::Custom(err) => err.fmt(formatter),
         }
     }
 }
@@ -48,6 +68,11 @@ impl From<io::Error> for TransferError {
 impl From<chacha20poly1305::Error> for TransferError {
     fn from(value: chacha20poly1305::Error) -> Self {
         TransferError::Encryption(value)
+    }
+}
+impl From<eframe::Error> for TransferError {
+    fn from(value: eframe::Error) -> Self {
+        Self::Ui(value)
     }
 }
 

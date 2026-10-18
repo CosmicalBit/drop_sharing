@@ -1,13 +1,14 @@
 //! contains the init function for the reciever
-use std::io::stdin;
+use std::{io::stdin, path::Path};
 
+use eframe::wgpu::naga::back::hlsl::Error::IoError;
 use notify_rust::{Notification, Timeout, Urgency};
 use tokio::io;
 
 pub const APP_NAME: &str = env!("CARGO_PKG_NAME");
 
 use crate::{
-    Cipher, Path, collect_files,
+    Cipher, collect_files,
     discovery::{
         connection::{Connection, Send, Serialize},
         hostinfo::HostInfo,
@@ -18,6 +19,8 @@ use crate::{
         key_agreement::{receiver::init_reciever_key_exchange, sender::keygen::Secret},
     },
     identity::{identity_definition::Identification, identity_exchange::key_exchange},
+    settings::Configs,
+    ui::{BackendCommunication, receive_value},
     wpa::requests::{P2pConnection, receiver_connect},
 };
 
@@ -26,7 +29,10 @@ pub enum ConfirmMode {
     Notification,
 }
 
-pub async fn init_receiver(confirmation_mode: &ConfirmMode) -> Result<Option<(Secret, P2pConnection, usize)>, TransferError> {
+pub async fn init_receiver(
+    confirmation_mode: &ConfirmMode,
+    backend: Option<&mut BackendCommunication>,
+) -> Result<Option<(Secret, P2pConnection, usize)>, TransferError> {
     let identification = Identification::new();
     let mut tcp_connection = receiver_connect().await?;
 
@@ -36,14 +42,36 @@ pub async fn init_receiver(confirmation_mode: &ConfirmMode) -> Result<Option<(Se
     //confirm if user wants to reciecve data
     let file_count = host.file_num();
 
-    let was_accepted = match confirmation_mode {
-        ConfirmMode::Notification => notify_connection(host, &mut tcp_connection.tcp).await?,
-        ConfirmMode::Terminal => confirm_connection(host, &mut tcp_connection.tcp).await?,
-    };
+    match backend {
+        None => {
+            let was_accepted = match confirmation_mode {
+                ConfirmMode::Notification => notify_connection(host, &mut tcp_connection.tcp).await?,
+                ConfirmMode::Terminal => confirm_connection(host, &mut tcp_connection.tcp).await?,
+            };
 
-    if !was_accepted {
-        return Ok(None);
-    }
+            if !was_accepted {
+                return Ok(None);
+            }
+        },
+        Some(backend) => {
+            backend
+                .to_recieve
+                .send(Some(host))
+                .map_err(|_| io::Error::new(io::ErrorKind::BrokenPipe, "GUI channel closed"))?;
+
+            let accepted = receive_value(&mut backend.to_recieve_answer).await?;
+            let decision = if accepted {
+                TransferDesision::Accepted
+            } else {
+                TransferDesision::Rejected
+            };
+            tcp_connection.tcp.send(&TransferResponse::new(decision)?.serialize()).await?;
+
+            if !accepted {
+                return Ok(None);
+            }
+        },
+    };
     //exchange keys
     let identity_context = key_exchange(&mut tcp_connection.tcp, identification).await?;
 
@@ -128,13 +156,14 @@ async fn notify_connection(hostinfo: HostInfo, connection: &mut Connection) -> i
     }
 }
 
-pub async fn receive_once(mode: ConfirmMode) -> Result<(), TransferError> {
-    let Some((secret, mut tcp, file_count)) = init_receiver(&mode).await? else {
+pub async fn receive_once(mode: ConfirmMode, backend: Option<&mut BackendCommunication>, cofig: &Configs) -> Result<(), TransferError> {
+    let Some((secret, mut tcp, file_count)) = init_receiver(&mode, backend).await? else {
         return Ok(());
     };
 
     let cipher = Cipher::try_from(secret)?;
-    collect_files(file_count, Path::new("received_files"), &cipher, &mut tcp.tcp).await?;
+
+    collect_files(file_count, &cofig.recieve_dir, &cipher, &mut tcp.tcp).await?;
 
     Ok(())
 }

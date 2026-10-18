@@ -7,7 +7,7 @@ use tokio::io;
 
 use crate::discovery::connection::{IndicationBytes, Serialize};
 
-const CHUNCK_SIZE: usize = 4096;
+pub const CHUNCK_SIZE: usize = 4096;
 
 pub fn build_header(path: &Path) -> io::Result<Vec<FileHeader>> {
     let mut vec = Vec::with_capacity(20);
@@ -68,8 +68,8 @@ impl FileHeader {
     pub fn file_size(&self) -> u64 {
         self.file_size
     }
-    pub fn chunk_size(&self) -> u32 {
-        self.chunk_size
+    pub fn chunk_size(&self) -> usize {
+        CHUNCK_SIZE
     }
     pub fn path(&self) -> &Path {
         &self.path

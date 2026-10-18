@@ -6,13 +6,21 @@ use crate::{
         hostinfo::HostInfo,
         message::{Message, TransferResponse},
     },
-    encryption::{cipher::TransferError, key_agreement::sender::{key_exchange::init_sender_key_exchange, keygen::Secret}},
+    encryption::{
+        cipher::TransferError,
+        key_agreement::sender::{key_exchange::init_sender_key_exchange, keygen::Secret},
+    },
     identity::{identity_definition::Identification, identity_exchange::key_exchange},
+    ui::BackendCommunication,
     wpa::requests::{P2pConnection, sender_connect},
 };
 
-pub async fn sender_init(num_of_files: u32) -> Result<Option<(Secret, P2pConnection)>, TransferError> {
-    let mut socket = sender_connect().await?;
+pub async fn sender_init(
+    num_of_files: u32,
+    backend: Option<&mut BackendCommunication>,
+) -> Result<Option<(Secret, P2pConnection)>, TransferError> {
+    let mut socket = sender_connect(backend).await?;
+
 
     let identification = Identification::new();
 
@@ -32,3 +40,6 @@ pub async fn sender_init(num_of_files: u32) -> Result<Option<(Secret, P2pConnect
 
     Ok(Some((secret, socket)))
 }
+
+
+
