@@ -156,14 +156,14 @@ async fn notify_connection(hostinfo: HostInfo, connection: &mut Connection) -> i
     }
 }
 
-pub async fn receive_once(mode: ConfirmMode, backend: Option<&mut BackendCommunication>, cofig: &Configs) -> Result<(), TransferError> {
+pub async fn receive_once(mode: ConfirmMode, backend: Option<&mut BackendCommunication>, cofig: &Configs) -> Result<bool, TransferError> {
     let Some((secret, mut tcp, file_count)) = init_receiver(&mode, backend).await? else {
-        return Ok(());
+        return Ok(false);
     };
 
     let cipher = Cipher::try_from(secret)?;
 
     collect_files(file_count, &cofig.recieve_dir, &cipher, &mut tcp.tcp).await?;
 
-    Ok(())
+    Ok(true)
 }

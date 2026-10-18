@@ -9,13 +9,13 @@ use tokio::sync::watch::{Receiver, Sender};
 
 pub(crate) async fn receive_value<T: Clone>(receiver: &mut Receiver<Option<T>>) -> io::Result<T> {
     loop {
-        if let Some(value) = receiver.borrow_and_update().clone() {
-            return Ok(value);
-        }
         receiver
             .changed()
             .await
             .map_err(|_| io::Error::new(io::ErrorKind::BrokenPipe, "GUI channel closed"))?;
+        if let Some(value) = receiver.borrow_and_update().clone() {
+            return Ok(value);
+        }
     }
 }
 
@@ -333,5 +333,26 @@ impl AppData {
                 self.state = Mode::Unkown;
             }
         });
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::receive_value;
+    use tokio::sync::watch;
+
+    #[tokio::test]
+    async fn receive_value_waits_for_a_new_selection() {
+        let (sender, mut receiver) = watch::channel(None);
+        sender.send(Some(1)).unwrap();
+        assert_eq!(receive_value(&mut receiver).await.unwrap(), 1);
+
+        let task = tokio::spawn(async move { receive_value(&mut receiver).await.unwrap() });
+
+        tokio::task::yield_now().await;
+        assert!(!task.is_finished(), "the previous selection was reused");
+
+        sender.send(Some(2)).unwrap();
+        assert_eq!(task.await.unwrap(), 2);
     }
 }

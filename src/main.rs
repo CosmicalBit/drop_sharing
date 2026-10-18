@@ -97,41 +97,43 @@ async fn main() -> Result<(), TransferError> {
             let app = Box::new(AppData::new(communication));
 
             tokio::spawn(async move {
-                let mode = crate::ui::receive_value(&mut backend_communication.mode).await?;
+                while let Ok(mode) = crate::ui::receive_value(&mut backend_communication.mode).await {
+                    match mode {
+                        CommunicationMode::Sender => {
+                            let files = crate::ui::receive_value(&mut backend_communication.selected_files_to_send).await?;
 
-                match mode {
-                    CommunicationMode::Sender => {
-                        //start sender
-                        let files = crate::ui::receive_value(&mut backend_communication.selected_files_to_send).await?;
+                            let headers: Vec<FileHeader> = files
+                                .iter()
+                                .map(|file| build_header(file))
+                                .collect::<io::Result<Vec<Vec<FileHeader>>>>()?
+                                .into_iter()
+                                .flatten()
+                                .collect();
+                            let counter = headers.len();
 
-                        let headers: Vec<FileHeader> = files
-                            .iter()
-                            .map(|file| build_header(file))
-                            .collect::<io::Result<Vec<Vec<FileHeader>>>>()?
-                            .into_iter()
-                            .flatten()
-                            .collect();
-                        let counter = headers.len();
+                            let (secret, mut tcp) = loop {
+                                match sender_init(counter as u32, Some(&mut backend_communication)).await? {
+                                    Some(connection) => break connection,
+                                    None => continue,
+                                }
+                            };
 
-                        let (secret, mut tcp) = loop {
-                            match sender_init(counter as u32, Some(&mut backend_communication)).await? {
-                                Some(connection) => break connection,
-                                None => continue,
+                            let cipher = Cipher::try_from(secret)?;
+
+                            send_files(&headers, &cipher, &mut tcp.tcp, Some(&backend_communication)).await?;
+                        },
+
+                        CommunicationMode::Reciever => {
+                            loop {
+                                if receive_once(ConfirmMode::Notification, Some(&mut backend_communication), &config).await? {
+                                    backend_communication.progress.send(Some(1.0))
+                                        .map_err(|_| io::Error::new(io::ErrorKind::BrokenPipe, "GUI progress channel closed"))?;
+                                    break;
+                                }
                             }
-                        };
-
-                        let cipher = Cipher::try_from(secret)?;
-
-                        send_files(&headers, &cipher, &mut tcp.tcp, Some(&backend_communication)).await?;
-                    },
-
-                    CommunicationMode::Reciever => {
-                        //start reciever
-
-                        receive_once(ConfirmMode::Notification, Some(&mut backend_communication), &config).await?;
-                    },
+                        },
+                    }
                 }
-
                 Ok::<(), TransferError>(())
             });
 
