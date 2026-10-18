@@ -317,22 +317,21 @@ impl AppData {
         }
     }
     fn completed(&mut self, ui: &mut egui::Ui) {
-        match self.state {
-            Mode::Sender(_) => {
-                ui.vertical_centered(|ui| {
-                    ui.add_space(10.0);
-                    ui.label("All files were sent succesfully");
-                });
-            },
-            Mode::Receiver(_) => {
-                ui.vertical_centered(|ui| {
-                    ui.add_space(10.0);
-                    ui.label("All files were recieved succesfully");
-                });
-            },
+        let message = match self.state {
+            Mode::Sender(_) => "All files were sent succesfully",
+            Mode::Receiver(_) => "All files were recieved succesfully",
             _ => unreachable!(),
-        }
-        // FIXME go back to homescreen instead or mayb this but pretty
-        self.state = Mode::Unkown;
+        };
+
+        ui.vertical_centered(|ui| {
+            ui.add_space(10.0);
+            ui.label(message);
+            ui.add_space(10.0);
+
+            if ui.button("Back to home").clicked() {
+                self.progress = None;
+                self.state = Mode::Unkown;
+            }
+        });
     }
 }
