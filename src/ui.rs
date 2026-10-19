@@ -1,6 +1,6 @@
 use crate::{discovery::hostinfo::HostInfo, settings::Configs};
-use eframe::App;
-use egui::CentralPanel;
+use eframe::{App, NativeOptions};
+use egui::{Button, CentralPanel};
 use std::io;
 use std::path::PathBuf;
 use std::time::Duration;
@@ -129,6 +129,7 @@ impl BackendCommunication {
 
 pub(crate) struct AppData {
     configs: Configs,
+    files_to_send: Vec<PathBuf>,
     devices: Vec<String>,
     pending_requests: Option<HostInfo>,
     communication: Communication,
@@ -166,6 +167,7 @@ impl AppData {
             configs,
             devices: Vec::new(),
             pending_requests: None,
+            files_to_send: Vec::new(),
             progress: None,
             state: Mode::Unkown,
             communication,
@@ -359,24 +361,38 @@ impl AppData {
         }
     }
     fn select_files(&mut self, ui: &mut egui::Ui) {
-        ui.vertical_centered(|ui| {
-            ui.label(egui::RichText::new("↑").size(48.0));
-            ui.heading("Drop files here");
-            ui.label("Drag and drop files from your file manager");
+        //TODO maybe add a nice screen / annimation
+        ui.ctx().input(|i| {
+            self.files_to_send
+                .extend(i.raw.dropped_files.iter().map(|f| f.path().to_path_buf()));
         });
 
-        let files: Vec<PathBuf> = ui
-            .ctx()
-            .input(|i| i.raw.dropped_files.iter().map(|file| file.path().to_path_buf()).collect());
+        let has_files = !self.files_to_send.is_empty();
+        let content_height = if has_files { 210.0 } else { 130.0 };
+        let top_space = ((ui.available_height() - content_height) / 2.0).max(0.0);
 
-        //TODO maybe add a nice screen / annimation
-        if !files.is_empty() {
-            if let Err(err) = self.communication.selected_files_to_send.send(Some(files)) {
-                tracing::error!("impossible to select files : {err}");
-            } else {
-                self.state = Mode::Sender(SenderState::WaitingForUserChoice);
+        ui.vertical_centered(|ui| {
+            ui.add_space(top_space);
+            ui.label(egui::RichText::new("↑").size(48.0));
+            ui.add_space(12.0);
+            ui.heading("Drop files here");
+            ui.label("Drag and drop files from your file manager");
+
+            if has_files {
+                ui.add_space(24.0);
+                let button = ui.add_sized([140.0, 40.0], Button::new("Send"));
+                if button.clicked() {
+                    match self
+                        .communication
+                        .selected_files_to_send
+                        .send(Some(std::mem::take(&mut self.files_to_send)))
+                    {
+                        Ok(_) => self.state = Mode::Sender(SenderState::WaitingForUserChoice),
+                        Err(err) => tracing::error!("error sending: {err}"),
+                    };
+                }
             }
-        }
+        });
     }
     fn completed(&mut self, ui: &mut egui::Ui) {
         match self.state {
@@ -416,22 +432,21 @@ impl AppData {
 
             ui.add_space(12.0);
 
-            if ui.button("Choose folder").clicked() {
-                if let Some(path) = rfd::FileDialog::new()
+            if ui.button("Choose folder").clicked()
+                && let Some(path) = rfd::FileDialog::new()
                     .set_title("Choose the folder were the downloaded files will go to")
                     .pick_folder()
-                {
-                    let configs = Configs { download_dir: path };
-                    match configs.save_config() {
-                        Ok(()) => {
-                            self.configs = configs.clone();
-                            self.communication.configs_sender.send_replace(Some(configs));
-                            if let Err(error) = self.communication.mode.send(Some(CommunicationMode::Settings)) {
-                                tracing::error!("Failed to notify backend of settings change: {error}");
-                            }
-                        },
-                        Err(error) => tracing::error!("failed to save settings: {error}"),
-                    }
+            {
+                let configs = Configs { download_dir: path };
+                match configs.save_config() {
+                    Ok(()) => {
+                        self.configs = configs.clone();
+                        self.communication.configs_sender.send_replace(Some(configs));
+                        if let Err(error) = self.communication.mode.send(Some(CommunicationMode::Settings)) {
+                            tracing::error!("Failed to notify backend of settings change: {error}");
+                        }
+                    },
+                    Err(error) => tracing::error!("failed to save settings: {error}"),
                 }
             }
             ui.add_space(20.0);
@@ -455,6 +470,20 @@ impl AppData {
                 }
             }
         });
+    }
+}
+
+///The prefered app configs
+pub(crate) fn config_eframe() -> NativeOptions {
+    let viewport = egui::ViewportBuilder::default()
+        .with_drag_and_drop(true)
+        .with_title("Drop Sharing")
+        .with_resizable(true)
+        .with_taskbar(true);
+
+    eframe::NativeOptions {
+        viewport,
+        ..Default::default()
     }
 }
 

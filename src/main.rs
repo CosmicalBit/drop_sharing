@@ -1,7 +1,7 @@
 use crate::arguments::Command::{self, GUI};
 use crate::file_collection::tree_walking::FileHeader;
 use crate::settings::Configs;
-use crate::ui::{AppData, BackendCommunication, Communication, CommunicationMode};
+use crate::ui::{AppData, BackendCommunication, Communication, CommunicationMode, config_eframe};
 use crate::{
     arguments::{
         Cli,
@@ -144,7 +144,9 @@ async fn main() -> Result<(), TransferError> {
                 Ok::<(), TransferError>(())
             });
 
-            eframe::run_native("Drop Sharing", eframe::NativeOptions::default(), Box::new(move |_cc| Ok(app)))?;
+            //loads eframe configs
+            let eframe = config_eframe();
+            eframe::run_native("Drop Sharing", eframe, Box::new(move |_cc| Ok(app)))?;
         },
     }
 
