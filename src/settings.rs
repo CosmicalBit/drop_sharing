@@ -1,5 +1,4 @@
 use crate::TransferError;
-use postcard;
 use serde::{Deserialize, Serialize};
 use std::{fs, path::PathBuf};
 

@@ -598,7 +598,7 @@ dependencies = [
  "bolero-kani",
  "bolero-libfuzzer",
  "cfg-if",
- "rand",
+ "rand 0.9.5",
 ]
 
 [[package]]
@@ -621,7 +621,7 @@ dependencies = [
  "bolero-generator",
  "lazy_static",
  "pretty-hex",
- "rand",
+ "rand 0.9.5",
  "rand_xoshiro",
 ]
 
@@ -829,6 +829,7 @@ dependencies = [
  "cfg-if",
  "cipher",
  "cpufeatures",
+ "rand_core 0.10.1",
 ]
 
 [[package]]
@@ -1267,6 +1268,7 @@ dependencies = [
  "notify-rust",
  "postcard",
  "proptest",
+ "rand 0.10.3",
  "rfd",
  "serde",
  "strum 0.28.0",
@@ -3522,7 +3524,7 @@ dependencies = [
  "bit-vec 0.8.0",
  "bitflags 2.13.2",
  "num-traits",
- "rand",
+ "rand 0.9.5",
  "rand_chacha",
  "rand_xorshift",
  "regex-syntax",
@@ -3587,6 +3589,17 @@ checksum = "b9ef1d0d795eb7d84685bca4f72f3649f064e6641543d3a8c415898726a57b41"
 dependencies = [
  "rand_chacha",
  "rand_core 0.9.5",
+]
+
+[[package]]
+name = "rand"
+version = "0.10.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "65c9fb96cbc91e3478eaae79a69fcd3f1ae4ad052e471fe6732fff548984b4af"
+dependencies = [
+ "chacha20",
+ "getrandom 0.4.3",
+ "rand_core 0.10.1",
 ]
 
 [[package]]

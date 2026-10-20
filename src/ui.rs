@@ -1,6 +1,6 @@
 use crate::{discovery::hostinfo::HostInfo, settings::Configs};
 use eframe::{App, NativeOptions};
-use egui::{Button, CentralPanel};
+use egui::{Button, CentralPanel, Rect, vec2};
 use std::io;
 use std::path::PathBuf;
 use std::time::Duration;
@@ -177,81 +177,70 @@ impl AppData {
 
 impl AppData {
     fn choose_mode(&mut self, ui: &mut egui::Ui) {
-        let button_width = 150.0;
-        let button_height = 65.0;
+        const BUTTON_SIZE: egui::Vec2 = egui::vec2(150.0, 65.0);
+        const SETTINGS_SIZE: egui::Vec2 = egui::vec2(36.0, 36.0);
+        const GAP: f32 = 20.0;
 
-        ui.with_layout(egui::Layout::right_to_left(egui::Align::TOP), |ui| {
-            if ui
-                .add_sized([36.0, 36.0], egui::Button::new(egui::RichText::new("⚙").size(22.0)))
-                .on_hover_text("Settings")
-                .clicked()
-            {
-                self.state = Mode::Settings;
+        let available = ui.max_rect();
+
+        // Settings button — top right
+        let settings_rect = egui::Align2::RIGHT_TOP.align_size_within_rect(SETTINGS_SIZE, available.shrink(12.0));
+
+        if ui
+            .put(settings_rect, egui::Button::new(egui::RichText::new("⚙").size(22.0)))
+            .on_hover_text("Settings")
+            .clicked()
+        {
+            self.state = Mode::Settings;
+        }
+
+        // Center the whole content group
+        let group_size = egui::vec2(BUTTON_SIZE.x * 2.0 + GAP, 175.0);
+
+        let group = egui::Align2::CENTER_CENTER.align_size_within_rect(group_size, available);
+
+        // Title
+        let title_rect = egui::Rect::from_min_size(group.min, egui::vec2(group.width(), 34.0));
+
+        ui.put(
+            title_rect,
+            egui::Label::new(egui::RichText::new("Share files effortlessly").heading()).halign(egui::Align::Center),
+        );
+
+        // Description
+        let description_rect = egui::Rect::from_min_size(group.min + egui::vec2(0.0, 42.0), egui::vec2(group.width(), 44.0));
+
+        ui.put(
+            description_rect,
+            egui::Label::new("Send and receive files securely between nearby devices").halign(egui::Align::Center),
+        );
+
+        // Send and Receive buttons
+        let send_rect = egui::Align2::LEFT_BOTTOM.align_size_within_rect(BUTTON_SIZE, group);
+
+        let receive_rect = egui::Align2::RIGHT_BOTTOM.align_size_within_rect(BUTTON_SIZE, group);
+
+        let send_button = ui.put(send_rect, egui::Button::new(egui::RichText::new("↑  Send Files").size(16.0)));
+
+        let receive_button = ui.put(receive_rect, egui::Button::new(egui::RichText::new("↓  Receive Files").size(16.0)));
+
+        if send_button.clicked() {
+            match self.communication.mode.send(Some(CommunicationMode::Sender)) {
+                Ok(()) => {
+                    self.state = Mode::Sender(SenderState::WaitingForSelectFiles);
+                },
+                Err(error) => tracing::error!("Failed to notify backend: {error}"),
             }
-        });
-        ui.vertical_centered(|ui| {
-            let stacked = ui.available_width() < button_width * 2.0 + 12.0;
+        }
 
-            ui.add_space(ui.available_height() * 0.25);
-
-            ui.heading("Share files effortlessly");
-            ui.add_space(6.0);
-            ui.label("Send and receive files securely between nearby devices");
-            ui.add_space(24.0);
-
-            let mut buttons = |ui: &mut egui::Ui| {
-                if ui
-                    .add_sized(
-                        [button_width, button_height],
-                        egui::Button::new(egui::RichText::new("↑  Send Files").size(16.0)),
-                    )
-                    .clicked()
-                {
-                    match self.communication.mode.send(Some(CommunicationMode::Sender)) {
-                        Ok(()) => {
-                            self.state = Mode::Sender(SenderState::WaitingForSelectFiles);
-                        },
-                        Err(error) => {
-                            tracing::error!("Failed to notify backend: {error}");
-                        },
-                    }
-                }
-
-                if ui
-                    .add_sized(
-                        [button_width, button_height],
-                        egui::Button::new(egui::RichText::new("↓  Receive Files").size(16.0)),
-                    )
-                    .clicked()
-                {
-                    match self.communication.mode.send(Some(CommunicationMode::Reciever)) {
-                        Ok(()) => {
-                            self.state = Mode::Receiver(ReceiverState::WaitingForUserChoice);
-                        },
-                        Err(error) => {
-                            tracing::error!("Failed to notify backend: {error}");
-                        },
-                    }
-                }
-            };
-
-            if stacked {
-                ui.vertical_centered(|ui| {
-                    ui.spacing_mut().item_spacing.y = 12.0;
-                    buttons(ui);
-                });
-            } else {
-                let row_width = button_width * 2.0 + 12.0;
-                ui.allocate_ui_with_layout(
-                    egui::vec2(row_width, button_height),
-                    egui::Layout::left_to_right(egui::Align::Center),
-                    |ui| {
-                        ui.spacing_mut().item_spacing.x = 12.0;
-                        buttons(ui);
-                    },
-                );
+        if receive_button.clicked() {
+            match self.communication.mode.send(Some(CommunicationMode::Reciever)) {
+                Ok(()) => {
+                    self.state = Mode::Receiver(ReceiverState::WaitingForUserChoice);
+                },
+                Err(error) => tracing::error!("Failed to notify backend: {error}"),
             }
-        });
+        }
     }
     fn choose_device_to_send(&mut self, ui: &mut egui::Ui) {
         if self.communication.all_devices_can_send_too.has_changed().unwrap_or(false)
@@ -259,6 +248,8 @@ impl AppData {
         {
             self.devices = devices;
         }
+        self.radar(ui);
+
         let dots = dots_annimation!(ui);
 
         ui.vertical_centered(|ui| {
@@ -470,6 +461,15 @@ impl AppData {
                 }
             }
         });
+    }
+    fn radar(&mut self, ui: &mut egui::Ui) {
+        let center = ui.max_rect().center();
+        let painter = ui.painter();
+
+        for radius in [40.0, 80.0, 120.0] {
+            painter.circle_stroke(center, 1.5, egui::Stroke::new(1.5, egui::Color32::from_rgb(40, 200, 180)));
+        }
+        painter.circle_filled(center, 7.0, egui::Color32::from_rgb(40, 200, 180));
     }
 }
 
